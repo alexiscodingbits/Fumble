@@ -10,9 +10,27 @@ else
 fi
 [ -n "$VERSION" ] || VERSION="1.0.0"
 
-# Ad-hoc ("-") by default so local builds need no certificate. The release workflow sets
-# CODESIGN_IDENTITY to a Developer ID for notarized builds.
-CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-"-"}"
+# Signing identity resolution, in order of preference:
+#   1. An explicit CODESIGN_IDENTITY from the environment (the release workflow sets a
+#      Developer ID here for notarized builds).
+#   2. A local self-signed "Fumble Local" code-signing cert, if the developer created one.
+#      This is the important one for day-to-day work: macOS ties Input Monitoring permission
+#      to the signing identity, so a *stable* identity means the grant survives every rebuild.
+#      An ad-hoc signature has no identity, so every build looks like a new app and the
+#      permission resets. Create the cert once via Keychain Access → Certificate Assistant →
+#      Create a Certificate (name "Fumble Local", type: Code Signing, self-signed).
+#   3. Ad-hoc ("-") — works, but expect to re-grant Input Monitoring after every rebuild.
+if [ -n "${CODESIGN_IDENTITY:-}" ]; then
+  :
+elif security find-identity -v -p codesigning 2>/dev/null | grep -q "Fumble Local"; then
+  CODESIGN_IDENTITY="Fumble Local"
+  echo "Signing with local identity 'Fumble Local' — Input Monitoring will persist across rebuilds."
+else
+  CODESIGN_IDENTITY="-"
+  echo "No 'Fumble Local' identity found; signing ad-hoc. Input Monitoring will reset on each rebuild."
+  echo "  Create one: Keychain Access → Certificate Assistant → Create a Certificate"
+  echo "  (name 'Fumble Local', type: Code Signing, Self Signed Root)."
+fi
 
 # Universal (arm64 + x86_64) release build.
 cd FumbleCore
@@ -90,8 +108,9 @@ codesign --verify --strict --verbose=2 "$APP"
 mkdir -p dist
 rm -rf "$FINAL"
 ditto "$APP" "$FINAL"
-echo "Built + signed $FINAL (version $VERSION)"
-echo
-echo "NOTE: ad-hoc signatures change on every rebuild, and macOS ties Input Monitoring"
-echo "      permission to the code signature. Expect to re-grant permission after each"
-echo "      rebuild until this ships with a stable Developer ID. See CLAUDE.md."
+echo "Built + signed $FINAL (version $VERSION) with identity: $CODESIGN_IDENTITY"
+if [ "$CODESIGN_IDENTITY" = "-" ]; then
+  echo
+  echo "NOTE: ad-hoc build — macOS will reset Input Monitoring on the next rebuild."
+  echo "      Create a 'Fumble Local' code-signing cert (see top of this script) to stop that."
+fi
