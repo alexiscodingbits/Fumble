@@ -32,13 +32,12 @@ public struct KeyEvent: Equatable, Sendable {
 }
 
 public struct RecorderConfig: Sendable {
-    /// Latencies above this are thinking pauses, not motor movement, and are excluded from
-    /// latency stats (the press still counts). A gap before a key can be "my pinky is slow"
-    /// or "I was deciding what to name this function" — above ~600ms it is essentially
-    /// always the latter, and mixing the two makes every key look bad after a coffee break.
-    public var maxMotorLatencyMilliseconds: Double = 600
+    /// How the motor-vs-think split is decided. See `MotorFilter` — the threshold is learned
+    /// per transition, per person, rather than being one global cutoff for everyone.
+    public var motor = MotorFilter.Config()
     /// A gap longer than this ends the active-typing session, so idle time never inflates
-    /// the WPM denominator.
+    /// the WPM denominator. Distinct from the motor filter: a 2s think still counts as active
+    /// typing time (it's part of your rhythm) but its latency is not a reach.
     public var idleThresholdSeconds: Double = 5
     /// Bigrams below this count are dropped on persist. See `DayStats.pruneRareBigrams`.
     public var minimumBigramCount: UInt64 = 3
@@ -138,7 +137,7 @@ public final class StatsRecorder {
             day.apps[bundleID, default: AppStat()].presses += 1
         }
 
-        if let gap = gapSeconds, gap >= 0 {
+        if let gap = gapSeconds, gap >= 0, let previous = previousKey {
             let milliseconds = gap * 1000
 
             // Active time: only gaps below the idle threshold count toward the WPM denominator.
@@ -149,14 +148,27 @@ public final class StatsRecorder {
                 }
             }
 
-            if milliseconds <= config.maxMotorLatencyMilliseconds {
+            // Classify the gap against the user's own history before recording it as a reach.
+            // The decision reads only already-accepted samples, so it's computed before we add
+            // this one — no self-reference.
+            let decision = MotorFilter(config: config.motor).classify(
+                gapMilliseconds: milliseconds,
+                previous: previous,
+                current: event.key,
+                day: day
+            )
+
+            switch decision {
+            case .motor(let tier):
                 day.keys[event.key.keyCode, default: KeyStat()].latency.add(milliseconds: milliseconds)
-                if let previous = previousKey {
-                    let bigram = BigramIdentity(first: previous, second: event.key)
-                    day.bigrams[bigram.storageKey, default: BigramStat()].count += 1
-                    day.bigrams[bigram.storageKey]?.latency.add(milliseconds: milliseconds)
-                }
-            } else {
+                day.motorLatency.add(milliseconds: milliseconds)
+                day.motorClassification.record(tier)
+
+                let bigram = BigramIdentity(first: previous, second: event.key)
+                day.bigrams[bigram.storageKey, default: BigramStat()].count += 1
+                day.bigrams[bigram.storageKey]?.latency.add(milliseconds: milliseconds)
+
+            case .think:
                 day.discardedPauses += 1
             }
         }

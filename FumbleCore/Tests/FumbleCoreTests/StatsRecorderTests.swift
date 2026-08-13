@@ -168,7 +168,7 @@ struct StatsRecorderTests {
     func thinkingPause() {
         let recorder = makeRecorder()
         var config = RecorderConfig()
-        config.maxMotorLatencyMilliseconds = 600
+        config.motor.coldStartCutoffMilliseconds = 600
         recorder.config = config
 
         recorder.record(KeyEvent(key: K.a, timestamp: 0))

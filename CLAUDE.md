@@ -40,6 +40,7 @@ FumbleCore/                        the SwiftPM package (all code)
     FumbleCore/                    PURE model — Foundation ONLY (no AppKit/SwiftUI/CoreGraphics)
       LatencyHistogram.swift       28 fixed buckets; percentiles by interpolation
       KeyIdentity.swift            keycode → label/finger tables; BigramIdentity
+      MotorFilter.swift            adaptive motor-vs-think split; per-transition thresholds
       DayStats.swift               THE ON-DISK FORMAT. Counters + histograms, no sequence
       StatsRecorder.swift          the state machine: KeyEvent → DayStats
       WeakSpots.swift              baseline + ranking by time cost
@@ -90,6 +91,16 @@ cd FumbleCore && swift run fumble-cli          # inspect today
   weights by frequency, so a frequent slow key drags the baseline toward itself and masks its own
   slowness — exactly the keys most worth fixing. This was caught by a test
   (`ranksByTimeCost`); don't "simplify" it back.
+- **The motor-vs-think split is adaptive, per transition, not a flat cutoff** (`MotorFilter`).
+  Threshold = clamp(k × your-own-median-for-this-transition, floor, ceiling), with a cascade
+  transition → key → global → flat cold-start when a transition lacks history. The reference
+  median is read from already-accepted samples (so it's clean) *before* the current sample is
+  added (so there's no self-reference) — keep that ordering in `StatsRecorder`. `motorLatency`
+  in `DayStats` is the running global pool that feeds the fallback; don't recompute it by
+  merging key histograms. `fumble-cli` prints the per-tier breakdown — if real data is mostly
+  `global`/`coldStart` rather than `transition`/`key`, the per-transition idea isn't paying off
+  and the sample thresholds need revisiting. Defaults (k=4, floor=250ms, ceiling=3s,
+  coldStart=600ms) are guesses to tune against real typing.
 - **p95 with a ≤5% tail sits at the bucket boundary, not in the tail.** Documented in
   `p95AtExactBoundary`. p95 measures regular fumbles, not worst case. Don't treat it as a max.
 - **`DayStats` is the file format.** `KeyIdentity.label` strings and `BigramIdentity.storageKey`

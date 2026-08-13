@@ -61,7 +61,9 @@ public struct AppStat: Codable, Equatable, Sendable {
 public struct DayStats: Codable, Equatable, Sendable {
 
     /// Bumped when the shape changes incompatibly, so the loader can migrate or discard.
-    public static let currentSchemaVersion = 1
+    /// v2: added `motorLatency` (running global motor histogram) and `motorClassification`
+    /// (per-tier diagnostics) when the flat latency cutoff became the adaptive `MotorFilter`.
+    public static let currentSchemaVersion = 2
 
     public var schemaVersion: Int = DayStats.currentSchemaVersion
     /// Midnight, local time, of the day this covers.
@@ -70,6 +72,13 @@ public struct DayStats: Codable, Equatable, Sendable {
     public var keys: [Int: KeyStat] = [:]
     public var bigrams: [String: BigramStat] = [:]
     public var apps: [String: AppStat] = [:]
+
+    /// Every accepted motor sample across all keys, pooled. Maintained incrementally so the
+    /// `MotorFilter` has a cheap personal-global median to fall back on, and so `overallLatency`
+    /// is a lookup rather than a merge of every key histogram on each call.
+    public var motorLatency = LatencyHistogram()
+    /// How motor samples were classified, by reference tier. Tuning/validation only.
+    public var motorClassification = MotorFilterCounts()
 
     /// Every typing key pressed, including ones excluded from latency stats.
     public var totalPresses: UInt64 = 0
@@ -113,11 +122,9 @@ public struct DayStats: Codable, Equatable, Sendable {
         return 1.0 - (Double(totalCorrections) / Double(totalPresses))
     }
 
-    /// Latency across every key, for use as the personal baseline that weak spots are
-    /// measured against. An absolute threshold would just flag slow typists' whole keyboard.
-    public var overallLatency: LatencyHistogram {
-        LatencyHistogram.merging(keys.values.map(\.latency))
-    }
+    /// Latency across every accepted motor sample. Identical to merging every key histogram,
+    /// but maintained incrementally, so it's an O(1) read instead of an O(keys) merge.
+    public var overallLatency: LatencyHistogram { motorLatency }
 
     public func merged(with other: DayStats) -> DayStats {
         var result = self
@@ -130,6 +137,8 @@ public struct DayStats: Codable, Equatable, Sendable {
         for (bundleID, stat) in other.apps {
             result.apps[bundleID, default: AppStat()].merge(stat)
         }
+        result.motorLatency.merge(other.motorLatency)
+        result.motorClassification.merge(other.motorClassification)
         result.totalPresses += other.totalPresses
         result.totalCorrections += other.totalCorrections
         result.activeSeconds += other.activeSeconds

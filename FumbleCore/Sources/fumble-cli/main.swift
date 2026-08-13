@@ -29,6 +29,15 @@ func day(named name: String, stats: DayStats) {
     print("  keys tracked \(stats.keys.count), bigrams \(stats.bigrams.count), apps \(stats.apps.count)")
     print("  excluded     synthetic=\(stats.rejectedSynthetic) secure=\(stats.rejectedSecureInput) autorepeat=\(stats.rejectedAutorepeat) pauses=\(stats.discardedPauses)")
 
+    // Motor-filter breakdown: which reference tier decided each accepted reach. If most
+    // samples are still 'global' or 'coldStart' the per-transition idea isn't paying off yet;
+    // a healthy long-running day should be dominated by 'transition' and 'key'.
+    let motor = stats.motorClassification
+    if motor.total > 0 {
+        func pct(_ value: UInt64) -> String { String(format: "%.0f%%", Double(value) / Double(motor.total) * 100) }
+        print("  motor by     transition=\(motor.transition) (\(pct(motor.transition)))  key=\(motor.key) (\(pct(motor.key)))  global=\(motor.global) (\(pct(motor.global)))  coldStart=\(motor.coldStart) (\(pct(motor.coldStart)))")
+    }
+
     guard let analysis = WeakSpots.analyse(stats) else {
         print("  weak spots   (not enough data yet)")
         return
