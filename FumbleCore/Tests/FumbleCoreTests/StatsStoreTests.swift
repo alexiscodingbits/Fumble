@@ -77,6 +77,35 @@ struct StatsStoreTests {
         #expect(all.map(\.date) == all.map(\.date).sorted())
     }
 
+    @Test("a pre-v2 day file (no motor fields) still loads, with latency intact")
+    func loadsLegacyFileWithoutMotorFields() throws {
+        let store = makeTemporaryStore()
+        defer { cleanUp(store) }
+
+        // Hand-write a v1-shaped file: per-key latency present, but no motorLatency or
+        // motorClassification. This is exactly what broke when the schema changed.
+        let date = Calendar.current.startOfDay(for: Date())
+        let stamp = StatsStore.filenameFormatter.string(from: date)
+        let epoch = date.timeIntervalSinceReferenceDate
+        let legacy = """
+        {"schemaVersion":1,"date":\(epoch),"totalPresses":300,"totalCorrections":5,
+         "activeSeconds":120,"rejectedSynthetic":0,"rejectedSecureInput":0,
+         "rejectedAutorepeat":0,"discardedPauses":2,"apps":{},"bigrams":{},
+         "keys":{"6":{"presses":300,"corrections":5,"latency":{"c":[0,0,0,0,0,0,0,0,0,300,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"n":300,"s":27000}}}}
+        """
+        try FileManager.default.createDirectory(at: store.directory, withIntermediateDirectories: true)
+        try legacy.write(to: store.directory.appendingPathComponent("\(stamp).json"),
+                         atomically: true, encoding: .utf8)
+
+        let loaded = try #require(try store.load(date))
+        #expect(loaded.totalPresses == 300)
+        // The recovered latency must still be usable: overallLatency falls back to the per-key
+        // histograms when motorLatency is absent.
+        #expect(loaded.overallLatency.total == 300)
+        #expect(loaded.motorLatency.total == 0)          // absent in the file, defaulted
+        #expect(loaded.motorClassification.total == 0)   // absent in the file, defaulted
+    }
+
     @Test("a future schema version is ignored rather than misread")
     func futureSchema() throws {
         let store = makeTemporaryStore()

@@ -124,7 +124,12 @@ public struct DayStats: Codable, Equatable, Sendable {
 
     /// Latency across every accepted motor sample. Identical to merging every key histogram,
     /// but maintained incrementally, so it's an O(1) read instead of an O(keys) merge.
-    public var overallLatency: LatencyHistogram { motorLatency }
+    ///
+    /// Falls back to the merge for pre-v2 day files, which predate `motorLatency` and so have
+    /// an empty one — their latency lives only in the per-key histograms.
+    public var overallLatency: LatencyHistogram {
+        motorLatency.total > 0 ? motorLatency : LatencyHistogram.merging(keys.values.map(\.latency))
+    }
 
     public func merged(with other: DayStats) -> DayStats {
         var result = self
@@ -169,5 +174,37 @@ public struct DayStats: Codable, Equatable, Sendable {
     public mutating func pruneRareBigrams(minimumCount: UInt64) {
         guard minimumCount > 1 else { return }
         bigrams = bigrams.filter { $0.value.count >= minimumCount }
+    }
+}
+
+// A day file is long-lived data, and fields only ever get *added*. So decoding is written to
+// tolerate any missing key by defaulting it, rather than failing the whole file — which is what
+// broke pre-v2 files when `motorLatency`/`motorClassification` were introduced. `encode` stays
+// synthesized. Only `date` is genuinely required.
+extension DayStats {
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, date, keys, bigrams, apps, motorLatency, motorClassification
+        case totalPresses, totalCorrections, activeSeconds
+        case rejectedSynthetic, rejectedSecureInput, rejectedAutorepeat, discardedPauses
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(date: try container.decode(Date.self, forKey: .date))
+
+        // Pre-v2 files have no schemaVersion? They do (v1 wrote it), but default defensively.
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        keys = try container.decodeIfPresent([Int: KeyStat].self, forKey: .keys) ?? [:]
+        bigrams = try container.decodeIfPresent([String: BigramStat].self, forKey: .bigrams) ?? [:]
+        apps = try container.decodeIfPresent([String: AppStat].self, forKey: .apps) ?? [:]
+        motorLatency = try container.decodeIfPresent(LatencyHistogram.self, forKey: .motorLatency) ?? LatencyHistogram()
+        motorClassification = try container.decodeIfPresent(MotorFilterCounts.self, forKey: .motorClassification) ?? MotorFilterCounts()
+        totalPresses = try container.decodeIfPresent(UInt64.self, forKey: .totalPresses) ?? 0
+        totalCorrections = try container.decodeIfPresent(UInt64.self, forKey: .totalCorrections) ?? 0
+        activeSeconds = try container.decodeIfPresent(Double.self, forKey: .activeSeconds) ?? 0
+        rejectedSynthetic = try container.decodeIfPresent(UInt64.self, forKey: .rejectedSynthetic) ?? 0
+        rejectedSecureInput = try container.decodeIfPresent(UInt64.self, forKey: .rejectedSecureInput) ?? 0
+        rejectedAutorepeat = try container.decodeIfPresent(UInt64.self, forKey: .rejectedAutorepeat) ?? 0
+        discardedPauses = try container.decodeIfPresent(UInt64.self, forKey: .discardedPauses) ?? 0
     }
 }
