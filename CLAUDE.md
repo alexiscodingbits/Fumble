@@ -69,9 +69,20 @@ cd FumbleCore && swift run fumble-cli          # inspect today
 
 ## ⚠️ Critical gotchas
 
-- **Input Monitoring resets on every rebuild.** macOS ties TCC permission to the code signature,
-  and ad-hoc signatures get a new cdhash whenever the binary changes. Expect to re-grant after
-  each build until there's a stable Developer ID. This is the single biggest dev friction.
+- **Signing identity: a local self-signed "Fumble Local" cert keeps Input Monitoring across
+  rebuilds.** macOS ties TCC permission to the signature; ad-hoc gets a new cdhash every build
+  and wipes the grant. `bundle-app.sh` auto-uses the "Fumble Local" code-signing cert if present
+  (create once: Keychain Access → Certificate Assistant → Create a Certificate, Code Signing,
+  self-signed). It's untrusted-as-root, so `find-identity -v` hides it — the script greps without
+  `-v` on purpose; codesign signs fine (trust matters for verifying, not signing). If a signature
+  change ever orphans the grant, `tccutil reset ListenEvent com.alexiscodingbits.fumble` then
+  re-grant.
+- **Permission is watched, not checked once.** `AppCoordinator.beginPermissionWatch` polls every
+  2s and self-starts capture the moment the grant lands — so granting in System Settings works
+  without a relaunch, and the "Grant access" button is never a dead end. Don't revert this to a
+  one-shot check: Input Monitoring grants don't notify a running app, and
+  `CGPreflightListenEventAccess` can return a stale cached false, which made the app look
+  permanently locked out even after the user said yes.
 - **It's Input Monitoring, NOT Accessibility.** `AXIsProcessTrusted()` reflects the wrong
   permission and gives false positives. Use `CGPreflightListenEventAccess()` /
   `CGRequestListenEventAccess()`. Getting this wrong produces an app that thinks it has

@@ -1,3 +1,4 @@
+import FumbleCore
 import FumbleUI
 import SwiftUI
 
@@ -16,13 +17,16 @@ struct DropdownView: View {
             case .needsPermission:
                 permissionGate
             case .noData:
+                liveAndTimeframe
                 message(
                     "No keystrokes recorded yet.",
                     detail: "Type anywhere and this will fill in."
                 )
             case .learning(let active, let required):
+                liveAndTimeframe
                 learningState(activeSeconds: active, requiredSeconds: required)
             case .ready:
+                liveAndTimeframe
                 summary
                 weakSpots
             }
@@ -46,6 +50,31 @@ struct DropdownView: View {
                     .foregroundStyle(.orange)
                     .help("The keyboard tap could not start. Check Input Monitoring permission.")
             }
+        }
+    }
+
+    /// Live speed on the left, timeframe selector for the averages on the right.
+    private var liveAndTimeframe: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(coordinator.liveWPM.map { "\(Int($0.rounded()))" } ?? "—")
+                    .font(.system(.title3, design: .monospaced).weight(.semibold))
+                    .foregroundStyle(coordinator.liveWPM == nil ? .secondary : .primary)
+                    .contentTransition(.numericText())
+                Text("live wpm").font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Picker("", selection: Binding(
+                get: { coordinator.selectedTimeframe },
+                set: { coordinator.selectedTimeframe = $0 }
+            )) {
+                ForEach(Timeframe.allCases) { frame in
+                    Text(frame.label).tag(frame)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .fixedSize()
         }
     }
 

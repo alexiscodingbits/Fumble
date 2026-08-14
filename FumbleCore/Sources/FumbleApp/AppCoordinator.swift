@@ -14,24 +14,46 @@ public final class AppCoordinator {
     public private(set) var hasPermission: Bool
     public private(set) var tapFailedToStart = false
 
+    /// Instantaneous typing speed, WPM, or nil when idle. Updated on a fast tick.
+    public private(set) var liveWPM: Double?
+
+    /// Which window the aggregate stats cover. Persisted, applied live.
+    public var selectedTimeframe: Timeframe {
+        didSet {
+            UserDefaults.standard.set(selectedTimeframe.rawValue, forKey: Self.timeframeKey)
+            rebuildViewState()
+        }
+    }
+    private static let timeframeKey = "selectedTimeframe"
+
     private let store: StatsStore
     private let recorder: StatsRecorder
     private var tap: EventTap?
 
     private var flushTimer: Timer?
     private var refreshTimer: Timer?
+    private var liveTimer: Timer?
+
+    /// Rolling buffer of recent keystroke timestamps for the live-speed readout. In memory only.
+    private var liveSpeed = LiveSpeed()
 
     /// Persist cadence. Frequent enough that a crash costs little, rare enough that we aren't
     /// writing a JSON file on every keystroke.
     private let flushInterval: TimeInterval = 30
     /// The dropdown is only visible when open, but the menu-bar WPM figure is always on screen.
     private let refreshInterval: TimeInterval = 5
+    /// Live WPM has to feel live, so it ticks fast — but it only touches the in-memory buffer,
+    /// not the full aggregate rebuild.
+    private let liveInterval: TimeInterval = 1
 
     /// True when the recorder has data that isn't on disk yet.
     private var isDirty = false
 
     public init(store: StatsStore = .default()) {
         self.store = store
+
+        self.selectedTimeframe = UserDefaults.standard.string(forKey: Self.timeframeKey)
+            .flatMap(Timeframe.init(rawValue:)) ?? .today
 
         let today = Calendar.current.startOfDay(for: Date())
         // Resume today's file if the app was restarted mid-day, so a relaunch doesn't reset
@@ -46,14 +68,50 @@ public final class AppCoordinator {
         )
     }
 
+    private var permissionTimer: Timer?
+
     // MARK: - Lifecycle
 
+    /// Entry point. Either begins capture (if already permitted) or starts watching for the
+    /// permission to be granted. Idempotent.
     public func start() {
         hasPermission = EventTap.hasPermission
-        guard hasPermission else {
-            rebuildViewState()
-            return
+        if hasPermission {
+            beginCapture()
+        } else {
+            // Trigger the system prompt on first ever launch, then watch for the grant. macOS
+            // shows the dialog only once per app identity; after that the user must use Settings.
+            EventTap.requestPermission()
+            beginPermissionWatch()
         }
+        rebuildViewState()
+    }
+
+    /// Polls for the permission and self-starts the moment it appears.
+    ///
+    /// This is the fix for Input Monitoring's worst UX trap: granting in System Settings does
+    /// not notify a running app, and `CGPreflightListenEventAccess` can keep returning the
+    /// cached answer, so a naive "check once on launch" app looks permanently locked out even
+    /// after the user has said yes. Polling on a timer means the app notices within a couple of
+    /// seconds however the grant was made — button, Settings toggle, or `tccutil`.
+    private func beginPermissionWatch() {
+        permissionTimer?.invalidate()
+        permissionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                guard EventTap.hasPermission else { return }
+                self.hasPermission = true
+                self.permissionTimer?.invalidate()
+                self.permissionTimer = nil
+                self.beginCapture()
+                self.rebuildViewState()
+            }
+        }
+    }
+
+    /// Creates the tap and the flush/refresh timers. Only called once we have permission.
+    private func beginCapture() {
+        guard tap == nil else { return }   // idempotent — don't stack taps
 
         let tap = EventTap { [weak self] event in
             self?.ingest(event)
@@ -62,7 +120,11 @@ public final class AppCoordinator {
             self.tap = tap
             tapFailedToStart = false
         } else {
+            // Preflight said yes but the tap wouldn't start — usually the grant needs a
+            // relaunch to take effect. Keep watching; a restart or re-grant will recover.
             tapFailedToStart = true
+            beginPermissionWatch()
+            return
         }
 
         flushTimer = Timer.scheduledTimer(withTimeInterval: flushInterval, repeats: true) { [weak self] _ in
@@ -70,6 +132,9 @@ public final class AppCoordinator {
         }
         refreshTimer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.rebuildViewState() }
+        }
+        liveTimer = Timer.scheduledTimer(withTimeInterval: liveInterval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateLiveWPM() }
         }
 
         // Sleep/wake are discontinuities: the gap across them is not a typing latency.
@@ -86,8 +151,6 @@ public final class AppCoordinator {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.recorder.breakSequence() }
         }
-
-        rebuildViewState()
     }
 
     /// Called from `applicationWillTerminate`. Without this the last flush interval is lost.
@@ -96,22 +159,13 @@ public final class AppCoordinator {
         tap?.stop()
         flushTimer?.invalidate()
         refreshTimer?.invalidate()
+        liveTimer?.invalidate()
+        permissionTimer?.invalidate()
     }
 
     public func requestPermission() {
         EventTap.requestPermission()
-        // The grant lands asynchronously and macOS shows the prompt only once per app
-        // identity, so poll briefly rather than assuming the user acted immediately.
-        Task { @MainActor in
-            for _ in 0..<20 {
-                try? await Task.sleep(for: .seconds(1))
-                if EventTap.hasPermission {
-                    hasPermission = true
-                    start()
-                    return
-                }
-            }
-        }
+        beginPermissionWatch()
     }
 
     public func openPrivacySettings() {
@@ -124,6 +178,19 @@ public final class AppCoordinator {
         rollDayIfNeeded()
         recorder.record(event)
         isDirty = true
+
+        // Feed the live-speed buffer with the same events that count as real typing — so the
+        // live readout is honest for the same reasons the average is (no pastes, no autorepeat).
+        if event.key.isTypingKey, !event.isSynthetic, !event.isSecureInput, !event.isAutorepeat {
+            liveSpeed.record(timestamp: event.timestamp)
+        }
+    }
+
+    private func updateLiveWPM() {
+        let now = ProcessInfo.processInfo.systemUptime
+        let value = liveSpeed.wordsPerMinute(now: now)
+        // Only publish on change, so the menu bar isn't redrawn every second while idle.
+        if value != liveWPM { liveWPM = value }
     }
 
     /// Rolls over at local midnight. Checked on ingest rather than by timer so it can't be
@@ -150,7 +217,25 @@ public final class AppCoordinator {
     }
 
     private func rebuildViewState() {
-        viewState = MenuViewState.build(day: recorder.day, hasPermission: hasPermission)
+        viewState = MenuViewState.build(day: aggregateForSelectedTimeframe(), hasPermission: hasPermission)
+    }
+
+    /// The `DayStats` the aggregate view should reflect, per the selected timeframe.
+    ///
+    /// "Today" uses the live in-memory recorder so the numbers move as you type. Longer windows
+    /// flush first (so today's in-progress data is included), then merge the day files in range.
+    /// Reloading from disk on each 5s refresh is fine — it's a handful of small files.
+    private func aggregateForSelectedTimeframe() -> DayStats? {
+        switch selectedTimeframe {
+        case .today:
+            return recorder.day
+        default:
+            flush()
+            let (start, end) = selectedTimeframe.range(now: Date())
+            let days = store.load(from: start, to: end)
+            guard !days.isEmpty else { return nil }
+            return DayStats.merging(days, date: end)
+        }
     }
 
     // MARK: - Data controls

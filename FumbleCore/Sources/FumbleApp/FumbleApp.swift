@@ -11,11 +11,15 @@ struct FumbleApp: App {
         MenuBarExtra {
             DropdownView(coordinator: coordinator)
         } label: {
-            // A glyph plus the number, so the item is identifiable at a glance among a row of
-            // other menu-bar text.
+            // A glyph plus a number. While you're typing it shows live speed (with a ›
+            // marker); when idle it falls back to the selected timeframe's average.
             HStack(spacing: 3) {
                 Image(systemName: "keyboard")
-                Text(coordinator.viewState.barText)
+                if let live = coordinator.liveWPM {
+                    Text("› \(Int(live.rounded()))")
+                } else {
+                    Text(coordinator.viewState.barText)
+                }
             }
             .onAppear {
                 appDelegate.coordinator = coordinator

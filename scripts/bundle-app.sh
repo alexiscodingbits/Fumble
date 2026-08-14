@@ -22,7 +22,10 @@ fi
 #   3. Ad-hoc ("-") — works, but expect to re-grant Input Monitoring after every rebuild.
 if [ -n "${CODESIGN_IDENTITY:-}" ]; then
   :
-elif security find-identity -v -p codesigning 2>/dev/null | grep -q "Fumble Local"; then
+# Note: no -v (valid-only) here. A self-signed cert is untrusted-as-root, so -v hides it, but
+# codesign signs with it fine (trust matters for verifying, not signing) and the resulting
+# stable Authority is what keeps the TCC permission across rebuilds.
+elif security find-identity -p codesigning 2>/dev/null | grep -q "Fumble Local"; then
   CODESIGN_IDENTITY="Fumble Local"
   echo "Signing with local identity 'Fumble Local' — Input Monitoring will persist across rebuilds."
 else
