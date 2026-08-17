@@ -27,7 +27,16 @@ struct FumbleApp: App {
             }
         }
         .menuBarExtraStyle(.window)
+
+        // The practice surface lives in a real window (a menu-bar popover can't hold focus for
+        // key capture). Opened from the dropdown's Practice button.
+        Window("Fumble Practice", id: Self.practiceWindowID) {
+            DrillView(coordinator: coordinator)
+        }
+        .windowResizability(.contentSize)
     }
+
+    static let practiceWindowID = "practice"
 }
 
 /// Exists for one reason: `applicationWillTerminate`, so the final flush happens. SwiftUI's

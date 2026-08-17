@@ -238,6 +238,40 @@ public final class AppCoordinator {
         }
     }
 
+    // MARK: - Drills
+
+    /// Build a drill targeting the user's current weak spots, using the richest data available:
+    /// today if it's substantial, otherwise the merged history. Falls back to an unweighted
+    /// warm-up when there isn't enough data to rank anything yet.
+    public func makeDrill(wordCount: Int = 30) -> DrillPlan {
+        let analysis = bestAnalysis()
+        let targets = analysis.map { DrillGenerator.Targets(analysis: $0) } ?? DrillGenerator.Targets()
+
+        var rng = SystemRandomNumberGenerator()
+        let text = DrillGenerator().generate(targets: targets, wordCount: wordCount, using: &rng)
+
+        // Focus labels: the weak keys and transitions this drill leans on, for display.
+        var focus: [String] = []
+        if let analysis {
+            focus += analysis.keys.prefix(5).map(\.label)
+            focus += analysis.drillable.compactMap { spot -> String? in
+                if case .bigram = spot.target { return spot.label }
+                return nil
+            }.prefix(3)
+        }
+        return DrillPlan(text: text, focus: focus)
+    }
+
+    /// The best weak-spot analysis we can produce right now: today if it clears the gates,
+    /// otherwise the merged history.
+    private func bestAnalysis() -> WeakSpots.Analysis? {
+        if let today = WeakSpots.analyse(recorder.day) { return today }
+        flush()
+        let all = store.loadAll()
+        guard !all.isEmpty else { return nil }
+        return WeakSpots.analyse(DayStats.merging(all, date: recorder.day.date))
+    }
+
     // MARK: - Data controls
 
     public var dataDirectory: URL { store.directory }

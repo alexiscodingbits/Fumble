@@ -91,6 +91,17 @@ public struct KeyIdentity: Hashable, Codable, Sendable, CustomStringConvertible 
         126: "Up",
     ]
 
+    /// Reverse of `labels` for single-character legends, lower-cased — so drill text can be
+    /// scored against keycode-based weak spots. Letters, digits and punctuation; multi-character
+    /// legends (Space, Return, …) are excluded.
+    public static let characterToKeyCode: [Character: Int] = {
+        var map: [Character: Int] = [:]
+        for (code, label) in labels where label.count == 1 {
+            map[Character(label.lowercased())] = code
+        }
+        return map
+    }()
+
     static let modifierKeyCodes: Set<Int> = [54, 55, 56, 57, 58, 59, 60, 61, 62, 63]
 
     static let navigationAndFunctionKeyCodes: Set<Int> = [

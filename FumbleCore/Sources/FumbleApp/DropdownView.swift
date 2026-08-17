@@ -6,8 +6,21 @@ struct DropdownView: View {
     let coordinator: AppCoordinator
     @State private var showingDiagnostics = false
     @State private var confirmingDelete = false
+    @Environment(\.openWindow) private var openWindow
+
+    private func openPractice() {
+        openWindow(id: FumbleApp.practiceWindowID)
+        // Accessory (menu-bar) apps don't come forward on their own; bring the window to front.
+        NSApp.activate(ignoringOtherApps: true)
+    }
 
     private var state: MenuViewState { coordinator.viewState }
+
+    /// Before there are ranked weak spots, a drill is a warm-up; after, it targets them.
+    private var practiceLabel: String {
+        if case .ready = state.readiness { return "Practice weak spots" }
+        return "Practice (warm-up)"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -29,6 +42,17 @@ struct DropdownView: View {
                 liveAndTimeframe
                 summary
                 weakSpots
+            }
+
+            if state.readiness != .needsPermission {
+                Button {
+                    openPractice()
+                } label: {
+                    Label(practiceLabel, systemImage: "figure.run")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
             }
 
             Divider()
