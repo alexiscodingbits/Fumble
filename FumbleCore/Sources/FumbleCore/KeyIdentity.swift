@@ -22,9 +22,19 @@ public struct KeyIdentity: Hashable, Codable, Sendable, CustomStringConvertible 
     /// Keys that don't produce text and shouldn't count toward speed or drills.
     public var isNavigationOrFunction: Bool { Self.navigationAndFunctionKeyCodes.contains(keyCode) }
 
-    /// True when this key is part of ordinary prose/code typing — the only kind we drill.
+    /// True when this key is part of ordinary prose/code typing. Counts toward presses, WPM,
+    /// and accuracy. Includes letters, digits, punctuation, Space, Return and Tab.
     public var isTypingKey: Bool {
         !isModifier && !isBackspace && !isNavigationOrFunction
+    }
+
+    /// True when this key's *reach latency* is a meaningful motor signal worth measuring and
+    /// drilling. Excludes Return and Tab: you pause before them (end of a line, end of a
+    /// thought), so their latency is dominated by thinking, not finger movement — and you can't
+    /// meaningfully "practise" the Return key anyway. They still count as presses via
+    /// `isTypingKey`; they just never become weak-spots or pollute the latency baseline.
+    public var isLatencyCandidate: Bool {
+        isTypingKey && keyCode != 36 && keyCode != 48   // not Return, not Tab
     }
 
     /// The finger that should press this key in standard touch-typing, for the heatmap and

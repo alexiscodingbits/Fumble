@@ -148,28 +148,33 @@ public final class StatsRecorder {
                 }
             }
 
-            // Classify the gap against the user's own history before recording it as a reach.
-            // The decision reads only already-accepted samples, so it's computed before we add
-            // this one — no self-reference.
-            let decision = MotorFilter(config: config.motor).classify(
-                gapMilliseconds: milliseconds,
-                previous: previous,
-                current: event.key,
-                day: day
-            )
+            // Latency is only a meaningful signal between two drillable keys. A reach into or
+            // out of Return/Tab is dominated by the pause around a line break, so it's counted
+            // as a press (above) but never recorded as a latency sample or a bigram.
+            if event.key.isLatencyCandidate, previous.isLatencyCandidate {
+                // Classify the gap against the user's own history before recording it as a
+                // reach. The decision reads only already-accepted samples, so it's computed
+                // before we add this one — no self-reference.
+                let decision = MotorFilter(config: config.motor).classify(
+                    gapMilliseconds: milliseconds,
+                    previous: previous,
+                    current: event.key,
+                    day: day
+                )
 
-            switch decision {
-            case .motor(let tier):
-                day.keys[event.key.keyCode, default: KeyStat()].latency.add(milliseconds: milliseconds)
-                day.motorLatency.add(milliseconds: milliseconds)
-                day.motorClassification.record(tier)
+                switch decision {
+                case .motor(let tier):
+                    day.keys[event.key.keyCode, default: KeyStat()].latency.add(milliseconds: milliseconds)
+                    day.motorLatency.add(milliseconds: milliseconds)
+                    day.motorClassification.record(tier)
 
-                let bigram = BigramIdentity(first: previous, second: event.key)
-                day.bigrams[bigram.storageKey, default: BigramStat()].count += 1
-                day.bigrams[bigram.storageKey]?.latency.add(milliseconds: milliseconds)
+                    let bigram = BigramIdentity(first: previous, second: event.key)
+                    day.bigrams[bigram.storageKey, default: BigramStat()].count += 1
+                    day.bigrams[bigram.storageKey]?.latency.add(milliseconds: milliseconds)
 
-            case .think:
-                day.discardedPauses += 1
+                case .think:
+                    day.discardedPauses += 1
+                }
             }
         }
 

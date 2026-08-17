@@ -92,7 +92,7 @@ public enum WeakSpots {
     ) -> Double? {
         let perKeyP95 = day.keys
             .compactMap { keyCode, stat -> Double? in
-                guard KeyIdentity(keyCode: keyCode).isTypingKey,
+                guard KeyIdentity(keyCode: keyCode).isLatencyCandidate,
                       stat.latency.total >= options.minimumKeySamples
                 else { return nil }
                 return stat.latency.p95
@@ -121,7 +121,7 @@ public enum WeakSpots {
         var keySpots: [WeakSpot] = []
         for (keyCode, stat) in day.keys {
             let key = KeyIdentity(keyCode: keyCode)
-            guard key.isTypingKey,
+            guard key.isLatencyCandidate,
                   stat.latency.total >= options.minimumKeySamples,
                   let p95 = stat.latency.p95
             else { continue }
@@ -143,6 +143,7 @@ public enum WeakSpots {
         var bigramSpots: [WeakSpot] = []
         for (storageKey, stat) in day.bigrams {
             guard let bigram = BigramIdentity(storageKey: storageKey),
+                  bigram.first.isLatencyCandidate, bigram.second.isLatencyCandidate,
                   stat.latency.total >= options.minimumBigramSamples,
                   let p95 = stat.latency.p95
             else { continue }

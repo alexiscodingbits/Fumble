@@ -14,6 +14,8 @@ private enum K {
     static let shift = KeyIdentity(keyCode: 56)
     static let command = KeyIdentity(keyCode: 55)
     static let left = KeyIdentity(keyCode: 123)
+    static let ret = KeyIdentity(keyCode: 36)
+    static let tab = KeyIdentity(keyCode: 48)
 }
 
 @Suite("StatsRecorder")
@@ -133,6 +135,48 @@ struct StatsRecorderTests {
 
         // The first delete clears the context; there's no longer a key to blame.
         #expect(recorder.day.totalCorrections == 1)
+    }
+
+    @Test("Return counts as a press but never as a latency sample or bigram")
+    func returnIsPressButNotLatency() {
+        let recorder = makeRecorder()
+        recorder.record(KeyEvent(key: K.a, timestamp: 0))
+        recorder.record(KeyEvent(key: K.ret, timestamp: 0.1))   // fast enough to be "motor"
+        recorder.record(KeyEvent(key: K.s, timestamp: 0.2))
+
+        // Return is a real keystroke: it counts toward WPM.
+        #expect(recorder.day.totalPresses == 3)
+        #expect(recorder.day[K.ret]?.presses == 1)
+        // But its latency is contaminated by the pause before it, so it's never recorded...
+        #expect((recorder.day[K.ret]?.latency.total ?? 0) == 0)
+        // ...and neither a→Return nor Return→s becomes a bigram.
+        #expect(recorder.day[BigramIdentity(first: K.a, second: K.ret)] == nil)
+        #expect(recorder.day[BigramIdentity(first: K.ret, second: K.s)] == nil)
+        // s's own latency isn't recorded either, because its predecessor was Return.
+        #expect((recorder.day[K.s]?.latency.total ?? 0) == 0)
+    }
+
+    @Test("Return never appears as a weak spot even with a slow measured latency")
+    func returnNotAWeakSpot() throws {
+        // Build a day with a healthy baseline (many keys) plus a Return that — hypothetically,
+        // if latency ever leaked in — would look very slow. It must not surface as a weak key.
+        var day = DayStats(date: Date(timeIntervalSince1970: 0))
+        for keyCode in [0, 1, 2, 3, 5, 12, 13, 14, 15, 17] {
+            var stat = KeyStat()
+            for _ in 0..<100 { stat.latency.add(milliseconds: 90); stat.presses += 1 }
+            day.keys[keyCode] = stat
+            day.totalPresses += 100
+        }
+        // Return: real presses, and (defensively) a slow latency histogram. The analyser must
+        // still exclude it because it isn't a latency candidate.
+        var ret = KeyStat()
+        for _ in 0..<100 { ret.latency.add(milliseconds: 500); ret.presses += 1 }
+        day.keys[36] = ret
+        day.totalPresses += 100
+        day.activeSeconds = 600
+
+        let analysis = try #require(WeakSpots.analyse(day))
+        #expect(!analysis.keys.contains { $0.label == "Return" })
     }
 
     // MARK: - Non-typing keys
