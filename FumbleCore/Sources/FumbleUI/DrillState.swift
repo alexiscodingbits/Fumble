@@ -1,3 +1,4 @@
+import FumbleCore
 import Foundation
 
 /// Tracks one drill in progress: what to type, what's been typed, and how it's going. Pure and
@@ -26,6 +27,11 @@ public struct DrillState: Equatable, Sendable {
     private var firstKeystroke: Double?
     private var lastKeystroke: Double?
 
+    /// Reach intervals (ms) per key code, for correctly typed characters — feeds the trainer's
+    /// confidence update. Only motor-plausible intervals are kept (a long think isn't a reach).
+    public private(set) var perKeyIntervals: [Int: [Double]] = [:]
+    private let maxReachMilliseconds: Double = 1_500
+
     public init(target: String) {
         self.target = Array(target)
         self.statuses = Array(repeating: .pending, count: self.target.count)
@@ -38,12 +44,24 @@ public struct DrillState: Equatable, Sendable {
     /// backspace to fix it, which is exactly the correction behaviour we want to encourage).
     public mutating func type(_ character: Character, at timestamp: Double) {
         guard cursor < target.count else { return }
+        let previous = lastKeystroke
         if firstKeystroke == nil { firstKeystroke = timestamp }
         lastKeystroke = timestamp
 
         totalTyped += 1
         let correct = character == target[cursor]
         if !correct { errors += 1 }
+
+        // Per-key reach timing for correctly typed characters: interval from the previous
+        // keystroke, kept only when it's a plausible motor reach (not a think-pause).
+        if correct, let previous {
+            let milliseconds = (timestamp - previous) * 1000
+            if milliseconds > 0, milliseconds <= maxReachMilliseconds,
+               let keyCode = KeyIdentity.characterToKeyCode[Character(character.lowercased())] {
+                perKeyIntervals[keyCode, default: []].append(milliseconds)
+            }
+        }
+
         statuses[cursor] = correct ? .correct : .incorrect
         cursor += 1
         if cursor < target.count { statuses[cursor] = .current }
@@ -70,5 +88,17 @@ public struct DrillState: Equatable, Sendable {
         let minutes = (end - first) / 60
         guard minutes > 0 else { return nil }
         return (Double(cursor) / 5.0) / minutes
+    }
+
+    /// Measured WPM per key code from this drill, for feeding the trainer's confidence. Median
+    /// reach per key → 12000 / median ms. Only keys with enough samples to be meaningful.
+    public func perKeyWPM(minimumSamples: Int = 2) -> [Int: Double] {
+        var result: [Int: Double] = [:]
+        for (keyCode, samples) in perKeyIntervals where samples.count >= minimumSamples {
+            let sorted = samples.sorted()
+            let median = sorted[sorted.count / 2]
+            if median > 0 { result[keyCode] = 12_000 / median }
+        }
+        return result
     }
 }

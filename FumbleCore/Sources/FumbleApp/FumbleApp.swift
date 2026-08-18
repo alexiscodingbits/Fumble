@@ -29,11 +29,11 @@ struct FumbleApp: App {
         .menuBarExtraStyle(.window)
 
         // The practice surface lives in a real window (a menu-bar popover can't hold focus for
-        // key capture). Opened from the dropdown's Practice button.
-        Window("Fumble Practice", id: Self.practiceWindowID) {
-            DrillView(coordinator: coordinator)
+        // key capture). A full multi-pane app: Practice / Stats / Settings.
+        Window("Fumble", id: Self.practiceWindowID) {
+            PracticeAppView(coordinator: coordinator)
         }
-        .windowResizability(.contentSize)
+        .windowResizability(.contentMinSize)
     }
 
     static let practiceWindowID = "practice"

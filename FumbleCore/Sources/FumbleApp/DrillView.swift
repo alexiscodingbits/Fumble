@@ -30,8 +30,7 @@ struct DrillView: View {
             footer
         }
         .padding(24)
-        .frame(width: 620, height: 340)
-        .background(Color(nsColor: .textBackgroundColor))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear { startSession() }
         .onReceive(ticker) { _ in now = ProcessInfo.processInfo.systemUptime }
     }

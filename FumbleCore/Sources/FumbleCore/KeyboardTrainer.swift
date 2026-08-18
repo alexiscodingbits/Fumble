@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 /// keybr's adaptive letter-unlocking loop — but seeded from your real typing, so you start
 /// pre-aimed at your actual weak keys instead of grinding up from the home row.
@@ -9,6 +10,7 @@ import Foundation
 /// the whole point of Fumble — is the seed: keybr starts every letter at zero because it has no
 /// data; we initialise confidence from captured latency, so letters you already type fast start
 /// already unlocked and mastered, and the trainer's focus lands on a real weakness from run one.
+@Observable
 public final class KeyboardTrainer {
 
     public struct Config: Sendable, Equatable {

@@ -26,6 +26,12 @@ public final class AppCoordinator {
     }
     private static let timeframeKey = "selectedTimeframe"
 
+    /// The trainer's mastery target, in WPM. keybr's default is 35.
+    public var targetWPM: Double {
+        didSet { UserDefaults.standard.set(targetWPM, forKey: Self.targetWPMKey) }
+    }
+    private static let targetWPMKey = "targetWPM"
+
     private let store: StatsStore
     private let recorder: StatsRecorder
     private var tap: EventTap?
@@ -54,6 +60,8 @@ public final class AppCoordinator {
 
         self.selectedTimeframe = UserDefaults.standard.string(forKey: Self.timeframeKey)
             .flatMap(Timeframe.init(rawValue:)) ?? .today
+        let storedTarget = UserDefaults.standard.double(forKey: Self.targetWPMKey)
+        self.targetWPM = storedTarget > 0 ? storedTarget : 35
 
         let today = Calendar.current.startOfDay(for: Date())
         // Resume today's file if the app was restarted mid-day, so a relaunch doesn't reset
@@ -271,6 +279,34 @@ public final class AppCoordinator {
         guard !all.isEmpty else { return nil }
         return WeakSpots.analyse(DayStats.merging(all, date: recorder.day.date))
     }
+
+    /// A trainer seeded from your real captured typing, so it opens pre-aimed at your weak
+    /// letters. Uses the merged history for the widest per-key coverage.
+    public func makeTrainer() -> KeyboardTrainer {
+        let day = richestDay()
+        var seed: [Int: Double] = [:]
+        if let day {
+            for key in KeyIdentity.alphabetByFrequency {
+                if let stat = day.keys[key.keyCode], let wpm = stat.estimatedWPM() {
+                    seed[key.keyCode] = wpm
+                }
+            }
+        }
+        var config = KeyboardTrainer.Config()
+        config.targetWPM = targetWPM
+        return KeyboardTrainer(seed: seed, config: config)
+    }
+
+    /// Today merged with all history — the widest per-key sample for seeding the trainer.
+    private func richestDay() -> DayStats? {
+        flush()
+        let all = store.loadAll()
+        if all.isEmpty { return recorder.day.totalPresses > 0 ? recorder.day : nil }
+        return DayStats.merging(all, date: recorder.day.date)
+    }
+
+    /// The richest merged day, exposed for the stats pane (heatmap, weak-spot tables).
+    public func statsSnapshot() -> DayStats? { richestDay() }
 
     // MARK: - Data controls
 
