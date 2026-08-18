@@ -18,6 +18,15 @@ public struct KeyStat: Codable, Equatable, Sendable {
         return Double(corrections) / Double(presses)
     }
 
+    /// Estimated WPM for this key, from its median reach latency. One keystroke per reach, the
+    /// standard 5-chars-per-word convention: WPM = (60000 / latencyMs) / 5 = 12000 / latencyMs.
+    /// This is what lets the trainer start pre-aimed at your real weak keys instead of grinding
+    /// from zero the way keybr must. Nil until there are enough samples to have a median.
+    public func estimatedWPM(minimumSamples: UInt64 = 10) -> Double? {
+        guard latency.total >= minimumSamples, let median = latency.p50, median > 0 else { return nil }
+        return 12_000 / median
+    }
+
     mutating func merge(_ other: KeyStat) {
         presses += other.presses
         corrections += other.corrections

@@ -102,6 +102,18 @@ public struct KeyIdentity: Hashable, Codable, Sendable, CustomStringConvertible 
         return map
     }()
 
+    /// The 26 letters in English frequency order (e, t, a, o, …). This is the order the trainer
+    /// unlocks them in — most useful first — mirroring how keybr introduces letters.
+    public static let alphabetByFrequency: [KeyIdentity] = [
+        14, 17, 0, 31, 34, 45, 1, 4, 15, 2, 37, 8, 32,   // e t a o i n s h r d l c u
+        46, 13, 3, 5, 16, 35, 11, 9, 40, 38, 7, 12, 6,    // m w f g y p b v k j x q z
+    ].map(KeyIdentity.init(keyCode:))
+
+    /// Vowel keys — used by the lesson generator to keep pseudo-words pronounceable.
+    public static let vowelKeyCodes: Set<Int> = [0, 14, 34, 31, 32, 16]   // a e i o u y
+
+    public var isVowel: Bool { Self.vowelKeyCodes.contains(keyCode) }
+
     static let modifierKeyCodes: Set<Int> = [54, 55, 56, 57, 58, 59, 60, 61, 62, 63]
 
     static let navigationAndFunctionKeyCodes: Set<Int> = [
