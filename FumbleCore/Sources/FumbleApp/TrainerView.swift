@@ -24,14 +24,16 @@ struct TrainerView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            header
-            VirtualKeyboardView(focusKeyCode: trainer.focusKey?.keyCode, keyColor: keyColor)
-                .frame(maxWidth: .infinity)
-            confidenceBars
-            typingSurface
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                header
+                VirtualKeyboardView(focusKeyCode: trainer.focusKey?.keyCode, keyColor: keyColor)
+                    .frame(maxWidth: .infinity)
+                confidenceBars
+                typingSurface
+            }
+            .padding(24)
         }
-        .padding(24)
         .onAppear { if drill.target.isEmpty { startSession() } }
         .onReceive(ticker) { _ in now = ProcessInfo.processInfo.systemUptime }
     }
@@ -48,6 +50,7 @@ struct TrainerView: View {
                         .foregroundStyle(Color.accentColor)
                     if let finger = focus.homeFinger {
                         Text(finger.displayName).font(.caption).foregroundStyle(.secondary)
+                            .lineLimit(1).layoutPriority(-1)
                     }
                 }
             } else {
@@ -72,20 +75,22 @@ struct TrainerView: View {
     // MARK: - Confidence bars
 
     private var confidenceBars: some View {
-        HStack(alignment: .bottom, spacing: 5) {
+        // Bars share the available width so the row never overflows, however many letters are
+        // unlocked (it grows to all 26).
+        HStack(alignment: .bottom, spacing: 4) {
             ForEach(trainer.unlockedKeys, id: \.keyCode) { key in
                 let confidence = trainer.confidence(for: key)
                 VStack(spacing: 3) {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(SkillColor.color(confidence))
-                        .frame(width: 20, height: 6 + 40 * confidence)
+                        .frame(height: 6 + 40 * confidence)
                     Text(key.label)
                         .font(.system(size: 11, weight: key == trainer.focusKey ? .bold : .regular,
                                       design: .monospaced))
                         .foregroundStyle(key == trainer.focusKey ? Color.accentColor : .secondary)
                 }
+                .frame(maxWidth: .infinity)
             }
-            Spacer(minLength: 0)
         }
         .frame(height: 64, alignment: .bottom)
     }
