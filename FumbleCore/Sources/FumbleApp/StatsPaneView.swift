@@ -49,16 +49,26 @@ struct StatsPaneView: View {
 
     private func weakList(_ title: String, rows: [(String, Double, Int)]) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.headline)
+            // Title on the left, column headers aligned over their columns.
+            HStack {
+                Text(title).font(.headline)
+                Spacer()
+                Text("slow reach").font(.caption2).foregroundStyle(.tertiary)
+                    .frame(width: 80, alignment: .trailing)
+                    .help("Your 95th-percentile reach time for this — how slow your slower hits are")
+                Text("time lost").font(.caption2).foregroundStyle(.tertiary)
+                    .frame(width: 80, alignment: .trailing)
+                    .help("Total time this cost you today versus your own baseline")
+            }
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 HStack {
                     Text(row.0).font(.system(.body, design: .monospaced).weight(.medium))
                         .frame(minWidth: 60, alignment: .leading)
                     Spacer()
                     Text("\(row.2)ms").font(.caption.monospaced()).foregroundStyle(.secondary)
+                        .frame(width: 80, alignment: .trailing)
                     Text(durationString(row.1)).font(.caption.monospaced())
-                        .frame(width: 70, alignment: .trailing)
-                        .help("Time this cost you")
+                        .frame(width: 80, alignment: .trailing)
                 }
             }
         }
