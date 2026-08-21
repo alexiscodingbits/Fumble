@@ -54,10 +54,15 @@ public struct DrillState: Equatable, Sendable {
 
         // Per-key reach timing for correctly typed characters: interval from the previous
         // keystroke, kept only when it's a plausible motor reach (not a think-pause).
+        //
+        // The lowercase mapping is done carefully: `Character(String)` traps unless the string
+        // is exactly one grapheme, and a stray keystroke's lowercase form isn't guaranteed to
+        // be, so guard on the grapheme count before constructing the Character.
         if correct, let previous {
             let milliseconds = (timestamp - previous) * 1000
-            if milliseconds > 0, milliseconds <= maxReachMilliseconds,
-               let keyCode = KeyIdentity.characterToKeyCode[Character(character.lowercased())] {
+            let lowered = character.lowercased()
+            if milliseconds > 0, milliseconds <= maxReachMilliseconds, lowered.count == 1,
+               let keyCode = KeyIdentity.characterToKeyCode[lowered[lowered.startIndex]] {
                 perKeyIntervals[keyCode, default: []].append(milliseconds)
             }
         }
