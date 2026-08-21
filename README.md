@@ -9,8 +9,8 @@ pseudo-random letter soup resembles the things you really type.
 
 macOS menu bar. Free. Open source. Entirely on-device.
 
-> **Status: early.** The tracker and the analysis are done and tested. Drills are next — see
-> [Roadmap](#roadmap). Numbers are real; the app is young.
+> **Status: nearly ready.** Capture, analysis, the adaptive trainer, and five practice modes
+> are built and tested. Public release is imminent — see [Roadmap](#roadmap).
 
 ---
 
@@ -70,8 +70,11 @@ Most typing trackers will happily report 400 WPM when you paste a paragraph. Fum
   (Pastes and most editor/LLM completions never generate keystrokes at all, so they can't
   inflate the count in the first place.)
 - **Key autorepeat** — holding a key down is not typing.
-- **Thinking pauses** — gaps over 600ms aren't finger movement, so they don't count as latency.
+- **Thinking pauses** — gaps too long to be finger movement don't count as latency (the
+  threshold adapts to your own per-transition speed).
 - **Idle time** — it never enters the WPM denominator.
+- **Fumble's own practice window** — drill text is synthetic and aimed at your weak keys, so
+  it's kept out of your daily stats entirely.
 
 Every one of these exclusions is **counted and shown** in the dropdown under "What was
 excluded". The number should be auditable, not magic.
@@ -101,9 +104,9 @@ Grant **Input Monitoring** when prompted (System Settings → Privacy & Security
 Monitoring). Fumble cannot work without it, and cannot ship on the Mac App Store because of it:
 the store mandates sandboxing, and sandboxing blocks this API.
 
-> Builds are currently **ad-hoc signed**, so macOS will warn that the developer is
-> unidentified, and Input Monitoring has to be re-granted after each rebuild. Notarized
-> releases are on the roadmap.
+> Release builds are **Developer ID signed and notarized** — the DMG opens on any Mac without
+> Gatekeeper warnings. Self-built copies sign with whatever identity you have (see
+> `scripts/bundle-app.sh`); with none, macOS re-asks for Input Monitoring after each rebuild.
 
 ## Inspect the data
 
@@ -114,14 +117,32 @@ swift run fumble-cli --all      # every day on record
 swift run fumble-cli --json     # raw stored data, verbatim
 ```
 
+## Practice
+
+Fumble is a coach, not just a tracker. The practice app (menu bar → Practice) has five modes:
+
+- **Trainer** — keybr's adaptive letter-unlocking loop, but *pre-aimed*: it seeds from your
+  real captured typing, so letters you already type fast start mastered and the focus lands on
+  a genuine weakness from lesson one. On-screen keyboard coloured by confidence, per-letter
+  progress bars, per-key feedback (last / top / wpm-per-lesson), real-word lessons.
+- **Weak spots** — continuous drills of real words weighted toward your slowest keys and
+  transitions from all-day capture.
+- **Custom text** — paste anything and practice it.
+- **Numbers** — digit groups (Benford-distributed, like keybr).
+- **Code** — symbol-heavy pseudo-code fragments.
+
+Typing assists (stop-until-correct or advance-through), whitespace dots, cursor styles, optional
+key/error sounds, and a daily goal with streaks. Practice typing is **excluded from your daily
+stats** so drills can't distort the model that generates them.
+
 ## Roadmap
 
 - [x] **M1** — capture core, latency histograms, per-key/bigram/app stats, persistence
-- [x] **M3 (partial)** — weak-spot ranking and the dropdown UI
+- [x] **M3** — weak-spot ranking, dropdown UI, keyboard heatmap, stats pane
+- [x] **M4** — adaptive trainer + drills + practice modes (see above)
+- [x] **M5 (partial)** — Developer ID signed + notarized builds
 - [ ] **M2** — validate the injected-keystroke filter against real automation tools
-- [ ] **M3** — keyboard heatmap, history and trends
-- [ ] **M4** — **drills**: practice text generated from your own weak spots
-- [ ] **M5** — notarized release, Homebrew cask, auto-update
+- [ ] **M5** — public release, Homebrew cask, auto-update
 - [ ] **v2** — the interesting one: **word- and token-level** coaching. Every tool in this space
       stops at individual keys and bigrams. Nothing knows that you fumble `useEffect` or
       `provenmetal` specifically. The plan is to build that vocabulary from your own repos and
@@ -133,7 +154,7 @@ swift run fumble-cli --json     # raw stored data, verbatim
 ```sh
 cd FumbleCore
 swift build        # must be 0 warnings
-swift test         # 57 tests
+swift test         # 190+ tests
 ```
 
 Layout: `FumbleCore` is a pure Foundation model — no AppKit, no SwiftUI. `FumbleUI` is pure

@@ -55,9 +55,25 @@ public final class AppCoordinator {
     public var dailyGoalMinutes: Int {
         didSet { UserDefaults.standard.set(dailyGoalMinutes, forKey: "dailyGoalMinutes") }
     }
-    /// The user's custom practice text (Custom text mode). Persisted verbatim.
+    /// The user's custom practice text (Custom text mode). Persisted as a plain file in the
+    /// documented data directory — NOT in UserDefaults — so it is visible via "Show data",
+    /// removed by "Delete all data", and disclosed in PRIVACY.md. This is content the user
+    /// chose to store; it must live where the privacy story says data lives.
     public var customPracticeText: String {
-        didSet { UserDefaults.standard.set(customPracticeText, forKey: "customPracticeText") }
+        didSet {
+            let url = customTextURL
+            if customPracticeText.isEmpty {
+                try? FileManager.default.removeItem(at: url)
+            } else {
+                try? FileManager.default.createDirectory(
+                    at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+                )
+                try? customPracticeText.write(to: url, atomically: true, encoding: .utf8)
+            }
+        }
+    }
+    private var customTextURL: URL {
+        store.directory.deletingLastPathComponent().appendingPathComponent("custom-text.txt")
     }
 
     let sounds = SoundPlayer()
@@ -111,7 +127,20 @@ public final class AppCoordinator {
         self.cursorStyle = defaults.string(forKey: "cursorStyle").flatMap(CursorStyle.init(rawValue:)) ?? .block
         self.dailyGoalMinutes = defaults.object(forKey: "dailyGoalMinutes") != nil
             ? defaults.integer(forKey: "dailyGoalMinutes") : 15
-        self.customPracticeText = defaults.string(forKey: "customPracticeText") ?? ""
+        // Custom text lives as a file in the data directory (see customPracticeText). A one-time
+        // migration rescues any text stored by the brief UserDefaults-backed version.
+        let customTextFile = store.directory.deletingLastPathComponent()
+            .appendingPathComponent("custom-text.txt")
+        if let migrated = defaults.string(forKey: "customPracticeText"), !migrated.isEmpty {
+            self.customPracticeText = migrated
+            defaults.removeObject(forKey: "customPracticeText")
+            try? FileManager.default.createDirectory(
+                at: customTextFile.deletingLastPathComponent(), withIntermediateDirectories: true
+            )
+            try? migrated.write(to: customTextFile, atomically: true, encoding: .utf8)
+        } else {
+            self.customPracticeText = (try? String(contentsOf: customTextFile, encoding: .utf8)) ?? ""
+        }
 
         let today = Calendar.current.startOfDay(for: Date())
         // Resume today's file if the app was restarted mid-day, so a relaunch doesn't reset
@@ -245,8 +274,12 @@ public final class AppCoordinator {
         isDirty = true
 
         // Feed the live-speed buffer with the same events that count as real typing — so the
-        // live readout is honest for the same reasons the average is (no pastes, no autorepeat).
-        if event.key.isTypingKey, !event.isSynthetic, !event.isSecureInput, !event.isAutorepeat {
+        // live readout is honest for the same reasons the average is (no pastes, no autorepeat,
+        // and no drill keystrokes: the menu-bar number is your real-world speed, and practice
+        // is excluded from the day for the same reason).
+        let isSelfPractice = event.appBundleID.map { recorder.config.excludedBundleIDs.contains($0) } ?? false
+        if event.key.isTypingKey, !event.isSynthetic, !event.isSecureInput, !event.isAutorepeat,
+           !isSelfPractice {
             liveSpeed.record(timestamp: event.timestamp)
         }
     }
@@ -396,12 +429,25 @@ public final class AppCoordinator {
         return WeakSpots.analyse(DayStats.merging(all, date: recorder.day.date))
     }
 
-    /// A trainer seeded from your real captured typing, so it opens pre-aimed at your weak
-    /// letters. Uses the merged history for the widest per-key coverage.
-    public func makeTrainer() -> KeyboardTrainer {
-        let day = richestDay()
+    /// The one trainer instance for this session. Living here (not in view @State) means pane
+    /// and mode switches can't wipe lesson progress, and the expensive seed computation runs
+    /// once instead of on every parent re-render.
+    private var cachedTrainer: KeyboardTrainer?
+
+    /// URL for the persisted trainer snapshot — alongside the day files, so "show data" and
+    /// "delete all" naturally cover it.
+    private var trainerSnapshotURL: URL {
+        store.directory.deletingLastPathComponent().appendingPathComponent("trainer.json")
+    }
+
+    /// The session trainer: restored from disk if a snapshot exists (folding in a fresh capture
+    /// seed for never-drilled keys), else seeded from captured typing alone. Progress must come
+    /// from the snapshot because practice keystrokes are deliberately excluded from capture.
+    public func trainer() -> KeyboardTrainer {
+        if let cachedTrainer { return cachedTrainer }
+
         var seed: [Int: Double] = [:]
-        if let day {
+        if let day = richestDay() {
             for key in KeyIdentity.alphabetByFrequency {
                 if let stat = day.keys[key.keyCode], let wpm = stat.estimatedWPM() {
                     seed[key.keyCode] = wpm
@@ -410,7 +456,31 @@ public final class AppCoordinator {
         }
         var config = KeyboardTrainer.Config()
         config.targetWPM = targetWPM
-        return KeyboardTrainer(seed: seed, config: config)
+
+        let trainer: KeyboardTrainer
+        if let data = try? Data(contentsOf: trainerSnapshotURL),
+           let snapshot = try? JSONDecoder().decode(KeyboardTrainer.Snapshot.self, from: data) {
+            trainer = KeyboardTrainer(snapshot: snapshot, seed: seed, config: config)
+        } else {
+            trainer = KeyboardTrainer(seed: seed, config: config)
+        }
+        cachedTrainer = trainer
+        return trainer
+    }
+
+    /// Persist the trainer's lesson-earned state. Called after each completed lesson — the
+    /// snapshot is a few KB, and losing at most one lesson to a crash is acceptable.
+    public func saveTrainer() {
+        guard let cachedTrainer else { return }
+        do {
+            try FileManager.default.createDirectory(
+                at: trainerSnapshotURL.deletingLastPathComponent(), withIntermediateDirectories: true
+            )
+            let data = try JSONEncoder().encode(cachedTrainer.snapshot())
+            try data.write(to: trainerSnapshotURL, options: .atomic)
+        } catch {
+            NSLog("Fumble: failed to persist trainer snapshot: \(error.localizedDescription)")
+        }
     }
 
     /// Today merged with all history — the widest per-key sample for seeding the trainer.
@@ -434,8 +504,17 @@ public final class AppCoordinator {
         NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: store.directory.path)
     }
 
+    /// Deletes EVERYTHING Fumble knows: day files, the trainer snapshot, the custom practice
+    /// text, and the practice-time log. "Delete all data" that quietly kept some of the data
+    /// would be worse than not offering the button.
     public func deleteAllData() {
         try? store.deleteAllData()
+        try? FileManager.default.removeItem(at: trainerSnapshotURL)
+        try? FileManager.default.removeItem(at: customTextURL)
+        customPracticeText = ""
+        UserDefaults.standard.removeObject(forKey: Self.practiceLogKey)
+        cachedTrainer = nil
+        goalVersion += 1
         recorder.startNewDay(Calendar.current.startOfDay(for: Date()))
         isDirty = false
         rebuildViewState()

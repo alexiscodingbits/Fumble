@@ -84,9 +84,12 @@ public struct DrillState: Equatable, Sendable {
 
         case .stopUntilCorrect:
             if !correct {
-                // Only the first miss at a position is an error; retries still count as
-                // keystrokes (totalTyped) so accuracy reflects the flailing honestly.
-                if erredPositions.insert(cursor).inserted { errors += 1 }
+                // Every miss is an error, like keybr. (An earlier version counted only the
+                // first miss per position, which made accuracy *rise* with flailing: retries
+                // inflated totalTyped while errors stayed fixed. errors/totalTyped is only
+                // honest when both count every attempt.)
+                errors += 1
+                erredPositions.insert(cursor)
                 return   // cursor stays; the position remains .current
             }
             let cleanFirstAttempt = !erredPositions.contains(cursor)

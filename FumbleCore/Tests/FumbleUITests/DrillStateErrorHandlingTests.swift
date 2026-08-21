@@ -31,15 +31,17 @@ struct DrillStateErrorHandlingTests {
         #expect(state.errors == 1)
     }
 
-    @Test("retries at a stuck position count keystrokes but only one error")
-    func retriesCountOnce() {
+    @Test("every retry at a stuck position counts as an error, like keybr")
+    func retriesAllCount() {
         var state = DrillState(target: "cat", errorHandling: .stopUntilCorrect)
         state.type("x", at: 0)
         state.type("y", at: 0.1)
         state.type("z", at: 0.2)
         #expect(state.cursor == 0)
         #expect(state.totalTyped == 3)
-        #expect(state.errors == 1)   // one lapse, not three
+        // Both counters move per attempt — errors/totalTyped is only an honest accuracy when
+        // they do. (Counting only the first miss made accuracy RISE with flailing.)
+        #expect(state.errors == 3)
     }
 
     @Test("correcting an erred position advances but stays honestly red")
@@ -55,16 +57,16 @@ struct DrillStateErrorHandlingTests {
         #expect(state.statuses[1] == .correct)
     }
 
-    @Test("errors are counted per erred position, not per drill")
-    func errorsPerPosition() {
+    @Test("errors accumulate across positions and retries")
+    func errorsAccumulate() {
         var state = DrillState(target: "cat", errorHandling: .stopUntilCorrect)
         state.type("x", at: 0)     // err at 0
         state.type("c", at: 0.1)
         state.type("a", at: 0.2)   // clean
         state.type("x", at: 0.3)   // err at 2
-        state.type("x", at: 0.4)   // retry at 2 — no new error
+        state.type("x", at: 0.4)   // retry at 2 — also an error
         state.type("t", at: 0.5)
-        #expect(state.errors == 2)
+        #expect(state.errors == 3)
         #expect(state.totalTyped == 6)
         #expect(state.isComplete)
     }
@@ -80,18 +82,24 @@ struct DrillStateErrorHandlingTests {
         #expect(state.totalTyped == 3)
     }
 
-    @Test("accuracy is measured over attempts, not positions")
+    @Test("accuracy degrades monotonically with flailing")
     func accuracy() throws {
         var state = DrillState(target: "abc", errorHandling: .stopUntilCorrect)
         state.type("a", at: 0)
         state.type("x", at: 0.1)   // wrong
-        state.type("x", at: 0.2)   // wrong again — an attempt, not another error
+        state.type("x", at: 0.2)   // wrong again — another error
         state.type("b", at: 0.3)
         state.type("c", at: 0.4)
         #expect(state.totalTyped == 5)
-        #expect(state.errors == 1)
+        #expect(state.errors == 2)
         let accuracy = try #require(state.accuracy)
-        #expect(abs(accuracy - 0.8) < 0.001)   // 1 error over 5 attempts
+        #expect(abs(accuracy - 0.6) < 0.001)   // 2 errors over 5 attempts
+
+        // The regression this guards: more flailing must never REPORT better accuracy. One
+        // clean run vs the same run plus an extra miss:
+        var clean = DrillState(target: "abc", errorHandling: .stopUntilCorrect)
+        for (i, ch) in "abc".enumerated() { clean.type(ch, at: Double(i) * 0.1) }
+        #expect(try #require(clean.accuracy) > accuracy)
     }
 
     @Test("intervals are recorded only for positions correct on the first attempt")
@@ -208,9 +216,8 @@ struct DrillStateErrorHandlingTests {
                     drill.type(pool.randomElement(using: &rng)!, at: clock)
                 }
                 #expect(drill.cursor >= 0 && drill.cursor <= drill.target.count)
+                // Every miss counts (keybr semantics), so errors are bounded by attempts.
                 #expect(drill.errors <= drill.totalTyped)
-                // First-attempt-only counting bounds errors by positions, not keystrokes.
-                #expect(drill.errors <= drill.target.count)
                 if !drill.isComplete, !drill.target.isEmpty {
                     #expect(drill.statuses[drill.cursor] == .current)
                 }

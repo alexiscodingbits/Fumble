@@ -8,22 +8,25 @@ import SwiftUI
 struct TrainerView: View {
     let coordinator: AppCoordinator
 
-    @State private var trainer: KeyboardTrainer
+    /// The session-lived trainer. Owned by the coordinator (not view @State) so switching
+    /// panes/modes can't wipe lesson progress, and the seed computation isn't re-run on every
+    /// parent re-render. Same instance every call; @Observable keeps the view tracking it.
+    private var trainer: KeyboardTrainer { coordinator.trainer() }
+
     @State private var drill = DrillState(target: "")
     @State private var now: Double = ProcessInfo.processInfo.systemUptime
     @FocusState private var focused: Bool
     @State private var errorFlash = false
+    /// Monotonic token so a stale flash-reset task can't truncate a newer flash.
+    @State private var errorFlashToken = 0
 
     @State private var sessionStart: Double?
-    @State private var passageStart: Double?
+    /// Active typing time this lesson (idle-capped deltas) — daily-goal accounting.
+    @State private var passageActiveSeconds: Double = 0
+    @State private var lastKeystrokeStamp: Double?
     @State private var completedChars = 0
 
     private let ticker = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
-
-    init(coordinator: AppCoordinator) {
-        self.coordinator = coordinator
-        _trainer = State(initialValue: coordinator.makeTrainer())
-    }
 
     var body: some View {
         ScrollView {
@@ -177,22 +180,30 @@ struct TrainerView: View {
 
         let stamp = ProcessInfo.processInfo.systemUptime
         if sessionStart == nil { sessionStart = stamp }
-        if passageStart == nil { passageStart = stamp }
+        if let last = lastKeystrokeStamp, stamp - last <= 5 {
+            passageActiveSeconds += stamp - last
+        }
+        lastKeystrokeStamp = stamp
         drill.type(character, at: stamp)
 
         coordinator.practiceKeystrokeFeedback(wasError: drill.lastEventWasError)
         if drill.lastEventWasError {
             errorFlash = true
+            errorFlashToken += 1
+            let token = errorFlashToken
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(180))
-                errorFlash = false
+                // Only the newest error's task may clear the flash; an older task going off
+                // mid-flash would truncate it.
+                if errorFlashToken == token { errorFlash = false }
             }
         }
 
         if drill.isComplete {
             completedChars += drill.target.count
             trainer.record(perKeyWPM: drill.perKeyWPM())   // updates confidence + may unlock
-            if let start = passageStart { coordinator.recordPracticeTime(seconds: stamp - start) }
+            coordinator.saveTrainer()                       // progress survives quit/relaunch
+            coordinator.recordPracticeTime(seconds: passageActiveSeconds)
             loadNextLesson()
         }
         return .handled
@@ -218,7 +229,8 @@ struct TrainerView: View {
             target: text,
             errorHandling: DrillState.ErrorHandling(rawValue: coordinator.typingAssistRaw) ?? .advance
         )
-        passageStart = nil
+        passageActiveSeconds = 0
+        lastKeystrokeStamp = nil
         focused = true
     }
 }

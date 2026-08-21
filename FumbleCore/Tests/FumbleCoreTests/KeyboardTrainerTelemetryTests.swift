@@ -106,3 +106,59 @@ struct KeyboardTrainerTelemetryTests {
         }
     }
 }
+
+@Suite("KeyboardTrainer persistence")
+struct KeyboardTrainerSnapshotTests {
+
+    private func code(_ c: Character) -> Int { KeyIdentity.characterToKeyCode[c]! }
+
+    @Test("snapshot round-trips lesson-earned state through JSON")
+    func roundTrip() throws {
+        let trainer = KeyboardTrainer(seed: [code("e"): 50, code("t"): 20])
+        // Earn some state: three lessons on the unlocked set.
+        for wpm in [22.0, 26.0, 30.0] {
+            trainer.record(perKeyWPM: Dictionary(uniqueKeysWithValues: trainer.unlockedKeys.map { ($0.keyCode, wpm) }))
+        }
+        let unlockedBefore = trainer.unlockedCount
+        let tKey = KeyIdentity(keyCode: code("t"))
+        let lastBefore = trainer.lastWPM(for: tKey)
+        let topBefore = trainer.topWPM(for: tKey)
+        let confidenceBefore = trainer.confidence(for: tKey)
+
+        let data = try JSONEncoder().encode(trainer.snapshot())
+        let decoded = try JSONDecoder().decode(KeyboardTrainer.Snapshot.self, from: data)
+        let restored = KeyboardTrainer(snapshot: decoded)
+
+        #expect(restored.unlockedCount == unlockedBefore)
+        #expect(restored.lastWPM(for: tKey) == lastBefore)
+        #expect(restored.topWPM(for: tKey) == topBefore)
+        #expect(abs(restored.confidence(for: tKey) - confidenceBefore) < 0.0001)
+    }
+
+    @Test("restore folds in fresh capture seed for never-drilled keys, snapshot wins elsewhere")
+    func seedMerging() {
+        let original = KeyboardTrainer(seed: [code("e"): 20])
+        original.record(perKeyWPM: [code("e"): 40])   // lesson-earned: e blended upward
+        let snapshot = original.snapshot()
+
+        // Fresh capture says e is 25 (stale vs lessons) and adds a never-drilled key o at 60.
+        let restored = KeyboardTrainer(snapshot: snapshot, seed: [code("e"): 25, code("o"): 60])
+        // Snapshot wins for e (lesson results are direct measurements)...
+        #expect(restored.wpm[code("e")] == snapshot.wpm[code("e")])
+        // ...seed fills o, which the snapshot never saw.
+        #expect(restored.wpm[code("o")] == 60)
+    }
+
+    @Test("restore never shrinks the unlocked set below what the snapshot earned")
+    func unlockNeverShrinks() {
+        let trainer = KeyboardTrainer(seed: [:])
+        // Earn several unlocks.
+        for _ in 0..<3 {
+            trainer.record(perKeyWPM: Dictionary(uniqueKeysWithValues: trainer.unlockedKeys.map { ($0.keyCode, 90.0) }))
+        }
+        let earned = trainer.unlockedCount
+        // Restoring with an empty seed (fresh install-esque) keeps the earned unlocks.
+        let restored = KeyboardTrainer(snapshot: trainer.snapshot(), seed: [:])
+        #expect(restored.unlockedCount == earned)
+    }
+}

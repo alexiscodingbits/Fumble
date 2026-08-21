@@ -55,11 +55,26 @@ swallow, or inject keystrokes — that is enforced by macOS, not by our own good
 ## Where the data lives
 
 ```
-~/Library/Application Support/Fumble/days/YYYY-MM-DD.json
+~/Library/Application Support/Fumble/days/YYYY-MM-DD.json   # daily counters + histograms
+~/Library/Application Support/Fumble/trainer.json           # trainer progress (per-key WPM, unlocked letters)
+~/Library/Application Support/Fumble/custom-text.txt        # only if you use Custom-text practice (see below)
 ```
 
-One plain JSON file per day. Nothing else, nowhere else. "Delete all" in the dropdown removes
-the directory.
+Plus, in the app's standard preferences (`defaults`): your settings, and a per-day tally of
+practice **minutes** (a number per date — no content).
+
+`custom-text.txt` exists only if you paste text into the Custom-text practice mode, and it is
+your pasted text verbatim — that's the feature. It is never transmitted anywhere, it's a plain
+file you can read and delete, and it is included in "Delete all data".
+
+**"Delete all data" removes all of it**: the day files, the trainer progress, the custom text,
+and the practice-time tally.
+
+## Practice typing is excluded
+
+Keystrokes typed inside Fumble's own practice window are dropped before any counter moves
+(counted visibly as "Practice typing" in the diagnostics). Drill text is synthetic and aimed at
+your weak keys — letting it into the day would corrupt the very model that generated it.
 
 ## Verify it yourself
 

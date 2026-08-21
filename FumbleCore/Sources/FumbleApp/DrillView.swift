@@ -19,10 +19,15 @@ struct DrillView: View {
     @FocusState private var focused: Bool
     /// Set for one beat after a wrong keystroke; drives the border flash.
     @State private var errorFlash = false
+    /// Monotonic token so a stale flash-reset task can't truncate a newer flash.
+    @State private var errorFlashToken = 0
 
     // Session accumulators, across completed passages this session.
     @State private var sessionStart: Double?
-    @State private var passageStart: Double?
+    /// Active typing time this passage: per-keystroke deltas, idle gaps excluded — so walking
+    /// away mid-passage doesn't count as practice toward the daily goal.
+    @State private var passageActiveSeconds: Double = 0
+    @State private var lastKeystrokeStamp: Double?
     @State private var completedChars = 0
     @State private var completedTyped = 0
     @State private var completedErrors = 0
@@ -71,13 +76,20 @@ struct DrillView: View {
                 .focusable()
                 .focused($focused)
                 .onKeyPress(phases: .down) { press in handle(press) }
-            Text(focused ? "Type the text above · ⌫ to fix mistakes · it keeps going" : "Click here, then type.")
+            Text(focused ? hintText : "Click here, then type.")
                 .font(.caption2)
                 .foregroundStyle(focused ? Color.secondary : Color.orange)
         }
         .onAppear { focused = true }
         .contentShape(Rectangle())
         .onTapGesture { focused = true }
+    }
+
+    /// Backspace only exists in advance mode; the stop-until-correct hint says what actually helps.
+    private var hintText: String {
+        coordinator.typingAssistRaw == DrillState.ErrorHandling.stopUntilCorrect.rawValue
+            ? "Type the text above · the cursor waits until you hit the right key"
+            : "Type the text above · ⌫ to fix mistakes · it keeps going"
     }
 
     @ViewBuilder
@@ -167,16 +179,23 @@ struct DrillView: View {
 
         let stamp = ProcessInfo.processInfo.systemUptime
         if sessionStart == nil { sessionStart = stamp }
-        if passageStart == nil { passageStart = stamp }
+        if let last = lastKeystrokeStamp, stamp - last <= 5 {
+            passageActiveSeconds += stamp - last
+        }
+        lastKeystrokeStamp = stamp
         drill.type(character, at: stamp)
 
         // Feedback: sounds per settings, and a brief border flash on error.
         coordinator.practiceKeystrokeFeedback(wasError: drill.lastEventWasError)
         if drill.lastEventWasError {
             errorFlash = true
+            errorFlashToken += 1
+            let token = errorFlashToken
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(180))
-                errorFlash = false
+                // Only the newest error's task may clear the flash; an older task going off
+                // mid-flash would truncate it.
+                if errorFlashToken == token { errorFlash = false }
             }
         }
 
@@ -187,8 +206,8 @@ struct DrillView: View {
             completedTyped += drill.totalTyped
             completedErrors += drill.errors
             passagesDone += 1
-            // Daily-goal accounting: the wall-clock span of this passage.
-            if let start = passageStart { coordinator.recordPracticeTime(seconds: stamp - start) }
+            // Daily-goal accounting: active typing time only.
+            coordinator.recordPracticeTime(seconds: passageActiveSeconds)
             loadNextPassage()
         }
         return .handled
@@ -211,7 +230,8 @@ struct DrillView: View {
             target: plan.text,
             errorHandling: DrillState.ErrorHandling(rawValue: coordinator.typingAssistRaw) ?? .advance
         )
-        passageStart = nil   // stamps on the first keystroke of the new passage
+        passageActiveSeconds = 0
+        lastKeystrokeStamp = nil
         focused = true
     }
 }

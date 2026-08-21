@@ -86,7 +86,8 @@ struct PracticeAppView: View {
 
             switch mode {
             case .trainer:
-                // Rebuilt when switching in, so it re-seeds from the latest captured data.
+                // The trainer instance itself lives on the coordinator, so switching away and
+                // back loses nothing — only the in-flight passage resets.
                 TrainerView(coordinator: coordinator).id("trainer")
             case .weakSpots:
                 DrillView(coordinator: coordinator).id("weakSpots")

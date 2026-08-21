@@ -169,4 +169,39 @@ public final class KeyboardTrainer {
         unlockedCount += 1
         return true
     }
+
+    // MARK: - Persistence
+
+    /// Everything lesson-earned, as a plain Codable value. Trainer progress must outlive the
+    /// view AND the process: practice keystrokes are deliberately excluded from capture (they'd
+    /// corrupt the weak-spot model), so reseeding from captured data can never reconstruct
+    /// lesson gains — without a snapshot, unlocked letters and telemetry would silently reset.
+    public struct Snapshot: Codable, Equatable, Sendable {
+        public var wpm: [Int: Double]
+        public var unlockedCount: Int
+        public var samples: [Int: [Double]]
+        public var tops: [Int: Double]
+    }
+
+    public func snapshot() -> Snapshot {
+        Snapshot(
+            wpm: wpm,
+            unlockedCount: unlockedCount,
+            samples: history.mapValues(\.samples),
+            tops: history.mapValues(\.top)
+        )
+    }
+
+    /// Restore from a snapshot, folding in a fresh capture seed for keys the snapshot has never
+    /// seen. Snapshot wins where both exist — lesson results are direct measurements of drill
+    /// typing, which the capture seed (real-world reaches) only approximates.
+    public convenience init(snapshot: Snapshot, seed: [Int: Double] = [:], config: Config = Config()) {
+        self.init(seed: seed.merging(snapshot.wpm) { _, fromSnapshot in fromSnapshot }, config: config)
+        // Never shrink the unlocked set: if the seed alone justified more letters than the
+        // snapshot had (target lowered, or real typing improved), keep the larger.
+        unlockedCount = min(alphabet.count, max(unlockedCount, snapshot.unlockedCount))
+        for (keyCode, samples) in snapshot.samples {
+            history[keyCode] = KeyHistory(samples: samples, top: snapshot.tops[keyCode] ?? samples.max() ?? 0)
+        }
+    }
 }
