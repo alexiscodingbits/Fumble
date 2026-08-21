@@ -7,11 +7,14 @@ struct DropdownView: View {
     @State private var showingDiagnostics = false
     @State private var confirmingDelete = false
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismiss) private var dismiss
 
     private func openPractice() {
         openWindow(id: FumbleApp.practiceWindowID)
         // Accessory (menu-bar) apps don't come forward on their own; bring the window to front.
         NSApp.activate(ignoringOtherApps: true)
+        // Close the menu-bar popover so it doesn't hang over the app window.
+        dismiss()
     }
 
     private var state: MenuViewState { coordinator.viewState }
