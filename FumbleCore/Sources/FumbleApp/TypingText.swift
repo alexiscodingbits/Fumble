@@ -28,7 +28,13 @@ enum TypingText {
     ) -> AttributedString {
         var result = AttributedString()
         for (index, character) in target.enumerated() {
-            let display: String = (character == " " && showWhitespaceDots) ? "·" : String(character)
+            // The dot replacement has a layout trap: '·' is not whitespace, so a dotted line
+            // contains no legal break points and the engine falls back to breaking anywhere —
+            // splitting words across lines. A zero-width space after each dot restores a break
+            // opportunity exactly where the real space was (the dot stays with the preceding
+            // word at a line end, which is also how keybr renders it). It's invisible and,
+            // being part of this piece, doesn't disturb the status-index mapping.
+            let display: String = (character == " " && showWhitespaceDots) ? "·\u{200B}" : String(character)
             var piece = AttributedString(display)
             switch statuses[index] {
             case .pending:

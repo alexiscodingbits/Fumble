@@ -130,7 +130,8 @@ struct TrainerView: View {
                 .lineSpacing(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
-                .background(Color(nsColor: .underPageBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.08)))
                 .overlay(RoundedRectangle(cornerRadius: 8)
                     .strokeBorder(
                         errorFlash ? Color.red.opacity(0.8)
