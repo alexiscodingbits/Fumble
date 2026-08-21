@@ -104,8 +104,12 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 # Strip xattrs, then sign LAST (after icon + plist are in place). --options runtime (hardened
 # runtime) is required for notarization.
+# A secure timestamp is required for notarization, but ad-hoc signatures can't be timestamped,
+# so only add it for a real identity.
+TIMESTAMP_FLAG=""
+[ "$CODESIGN_IDENTITY" != "-" ] && TIMESTAMP_FLAG="--timestamp"
 xattr -cr "$APP"
-codesign --force --options runtime --sign "$CODESIGN_IDENTITY" "$APP"
+codesign --force --options runtime $TIMESTAMP_FLAG --sign "$CODESIGN_IDENTITY" "$APP"
 codesign --verify --strict --verbose=2 "$APP"
 
 mkdir -p dist

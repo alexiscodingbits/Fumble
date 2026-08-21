@@ -30,8 +30,11 @@ hdiutil create \
   -ov -format UDZO \
   "$DMG"
 
-# Sign the DMG itself so Gatekeeper is happy with the container too.
-codesign --force --sign "$CODESIGN_IDENTITY" "$DMG"
+# Sign the DMG itself so Gatekeeper is happy with the container too (timestamped for a real
+# identity so it can be notarized).
+TIMESTAMP_FLAG=""
+[ "$CODESIGN_IDENTITY" != "-" ] && TIMESTAMP_FLAG="--timestamp"
+codesign --force $TIMESTAMP_FLAG --sign "$CODESIGN_IDENTITY" "$DMG"
 codesign --verify --verbose=2 "$DMG" || true
 
 echo "Built $DMG (version $VERSION, identity: $CODESIGN_IDENTITY)"
