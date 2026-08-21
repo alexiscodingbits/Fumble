@@ -105,6 +105,11 @@ public struct DayStats: Codable, Equatable, Sendable {
     public var rejectedAutorepeat: UInt64 = 0
     /// Latency samples discarded as thinking pauses rather than motor movement.
     public var discardedPauses: UInt64 = 0
+    /// Events dropped because they were typed into Fumble's own practice window. Drills are
+    /// synthetic text aimed at your weak keys; letting them into the day would corrupt the very
+    /// model that chose them (every drilled key would suddenly look frequent), and it would make
+    /// "practice doesn't affect your daily stats" a lie.
+    public var rejectedSelfPractice: UInt64 = 0
 
     public init(date: Date) {
         self.date = date
@@ -160,6 +165,7 @@ public struct DayStats: Codable, Equatable, Sendable {
         result.rejectedSecureInput += other.rejectedSecureInput
         result.rejectedAutorepeat += other.rejectedAutorepeat
         result.discardedPauses += other.discardedPauses
+        result.rejectedSelfPractice += other.rejectedSelfPractice
         return result
     }
 
@@ -195,6 +201,7 @@ extension DayStats {
         case schemaVersion, date, keys, bigrams, apps, motorLatency, motorClassification
         case totalPresses, totalCorrections, activeSeconds
         case rejectedSynthetic, rejectedSecureInput, rejectedAutorepeat, discardedPauses
+        case rejectedSelfPractice
     }
 
     public init(from decoder: Decoder) throws {
@@ -215,5 +222,6 @@ extension DayStats {
         rejectedSecureInput = try container.decodeIfPresent(UInt64.self, forKey: .rejectedSecureInput) ?? 0
         rejectedAutorepeat = try container.decodeIfPresent(UInt64.self, forKey: .rejectedAutorepeat) ?? 0
         discardedPauses = try container.decodeIfPresent(UInt64.self, forKey: .discardedPauses) ?? 0
+        rejectedSelfPractice = try container.decodeIfPresent(UInt64.self, forKey: .rejectedSelfPractice) ?? 0
     }
 }

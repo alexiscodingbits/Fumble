@@ -32,6 +32,45 @@ public final class AppCoordinator {
     }
     private static let targetWPMKey = "targetWPM"
 
+    // MARK: Practice preferences (all persisted, applied live)
+
+    /// How mistakes behave in practice: advance-through (fix with backspace) or keybr-style
+    /// stop-until-correct. Stored as the DrillState.ErrorHandling raw value.
+    public var typingAssistRaw: String {
+        didSet { UserDefaults.standard.set(typingAssistRaw, forKey: "typingAssist") }
+    }
+    var soundMode: SoundMode {
+        didSet { UserDefaults.standard.set(soundMode.rawValue, forKey: "soundMode") }
+    }
+    public var soundVolume: Double {
+        didSet { UserDefaults.standard.set(soundVolume, forKey: "soundVolume") }
+    }
+    public var showWhitespaceDots: Bool {
+        didSet { UserDefaults.standard.set(showWhitespaceDots, forKey: "showWhitespaceDots") }
+    }
+    var cursorStyle: CursorStyle {
+        didSet { UserDefaults.standard.set(cursorStyle.rawValue, forKey: "cursorStyle") }
+    }
+    /// Daily practice goal in minutes; 0 = off. A reminder, never a limit.
+    public var dailyGoalMinutes: Int {
+        didSet { UserDefaults.standard.set(dailyGoalMinutes, forKey: "dailyGoalMinutes") }
+    }
+    /// The user's custom practice text (Custom text mode). Persisted verbatim.
+    public var customPracticeText: String {
+        didSet { UserDefaults.standard.set(customPracticeText, forKey: "customPracticeText") }
+    }
+
+    let sounds = SoundPlayer()
+
+    /// Play feedback for a practice keystroke, honouring the sound settings.
+    public func practiceKeystrokeFeedback(wasError: Bool) {
+        if wasError {
+            if soundMode.playsErrors { sounds.error(volume: soundVolume) }
+        } else {
+            if soundMode.playsKeys { sounds.key(volume: soundVolume) }
+        }
+    }
+
     private let store: StatsStore
     private let recorder: StatsRecorder
     private var tap: EventTap?
@@ -63,11 +102,29 @@ public final class AppCoordinator {
         let storedTarget = UserDefaults.standard.double(forKey: Self.targetWPMKey)
         self.targetWPM = storedTarget > 0 ? storedTarget : 35
 
+        let defaults = UserDefaults.standard
+        self.typingAssistRaw = defaults.string(forKey: "typingAssist") ?? "advance"
+        self.soundMode = defaults.string(forKey: "soundMode").flatMap(SoundMode.init(rawValue:)) ?? .off
+        self.soundVolume = defaults.object(forKey: "soundVolume") != nil ? defaults.double(forKey: "soundVolume") : 0.5
+        self.showWhitespaceDots = defaults.object(forKey: "showWhitespaceDots") != nil
+            ? defaults.bool(forKey: "showWhitespaceDots") : true
+        self.cursorStyle = defaults.string(forKey: "cursorStyle").flatMap(CursorStyle.init(rawValue:)) ?? .block
+        self.dailyGoalMinutes = defaults.object(forKey: "dailyGoalMinutes") != nil
+            ? defaults.integer(forKey: "dailyGoalMinutes") : 15
+        self.customPracticeText = defaults.string(forKey: "customPracticeText") ?? ""
+
         let today = Calendar.current.startOfDay(for: Date())
         // Resume today's file if the app was restarted mid-day, so a relaunch doesn't reset
         // the numbers and make the app look like it lost the morning.
         let existing = (try? store.load(today)) ?? nil
         self.recorder = StatsRecorder(day: existing ?? DayStats(date: today))
+
+        // Exclude our own practice window from capture: drill text is synthetic and aimed at
+        // your weak keys, so counting it would corrupt the very model that generated it — and
+        // make the "practice doesn't affect your daily stats" promise false.
+        if let ownBundleID = Bundle.main.bundleIdentifier {
+            recorder.config.excludedBundleIDs = [ownBundleID]
+        }
 
         self.hasPermission = EventTap.hasPermission
         self.viewState = MenuViewState.build(
@@ -244,6 +301,61 @@ public final class AppCoordinator {
             guard !days.isEmpty else { return nil }
             return DayStats.merging(days, date: end)
         }
+    }
+
+    // MARK: - Daily goal
+
+    private static let practiceLogKey = "practicedSecondsByDay"
+    private static let dayKeyFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
+    /// Practice seconds per day, persisted as ["yyyy-MM-dd": seconds]. Small forever: one entry
+    /// per practised day.
+    private var practiceLog: [String: Double] {
+        get { UserDefaults.standard.dictionary(forKey: Self.practiceLogKey) as? [String: Double] ?? [:] }
+        set { UserDefaults.standard.set(newValue, forKey: Self.practiceLogKey) }
+    }
+
+    /// Called by practice surfaces as time accrues (per completed passage).
+    public func recordPracticeTime(seconds: Double) {
+        guard seconds > 0, seconds.isFinite else { return }
+        let key = Self.dayKeyFormatter.string(from: Date())
+        var log = practiceLog
+        log[key, default: 0] += seconds
+        practiceLog = log
+        goalVersion += 1   // poke observers; UserDefaults isn't @Observable
+    }
+
+    /// Bumped on every practice-time write so SwiftUI re-reads the derived goal values.
+    public private(set) var goalVersion = 0
+
+    public var todayPracticeSeconds: Double {
+        practiceLog[Self.dayKeyFormatter.string(from: Date())] ?? 0
+    }
+
+    /// 0…1 toward today's goal; nil when the goal is off.
+    public var goalProgress: Double? {
+        PracticeGoal.progress(practicedSeconds: todayPracticeSeconds,
+                              goalSeconds: Double(dailyGoalMinutes) * 60)
+    }
+
+    public var currentStreak: Int {
+        let calendar = Calendar.current
+        var byDay: [Date: Double] = [:]
+        for (key, seconds) in practiceLog {
+            if let date = Self.dayKeyFormatter.date(from: key) {
+                byDay[calendar.startOfDay(for: date)] = seconds
+            }
+        }
+        return PracticeGoal.streak(practicedSecondsByDay: byDay,
+                                   goalSeconds: Double(dailyGoalMinutes) * 60,
+                                   today: Date(), calendar: calendar)
     }
 
     // MARK: - Drills

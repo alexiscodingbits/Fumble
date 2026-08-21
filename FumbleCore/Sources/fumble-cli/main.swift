@@ -27,7 +27,7 @@ func day(named name: String, stats: DayStats) {
         print("  accuracy     \(String(format: "%.2f%%", accuracy * 100))")
     }
     print("  keys tracked \(stats.keys.count), bigrams \(stats.bigrams.count), apps \(stats.apps.count)")
-    print("  excluded     synthetic=\(stats.rejectedSynthetic) secure=\(stats.rejectedSecureInput) autorepeat=\(stats.rejectedAutorepeat) pauses=\(stats.discardedPauses)")
+    print("  excluded     synthetic=\(stats.rejectedSynthetic) secure=\(stats.rejectedSecureInput) autorepeat=\(stats.rejectedAutorepeat) pauses=\(stats.discardedPauses) selfPractice=\(stats.rejectedSelfPractice)")
 
     // Motor-filter breakdown: which reference tier decided each accepted reach. If most
     // samples are still 'global' or 'coldStart' the per-transition idea isn't paying off yet;

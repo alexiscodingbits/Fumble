@@ -56,6 +56,7 @@ public struct MenuViewState: Equatable, Sendable {
         public let rejectedSecureInput: String
         public let rejectedAutorepeat: String
         public let discardedPauses: String
+        public let rejectedSelfPractice: String
         /// True when anything was rejected — the UI only shows the section if so, but it must
         /// always be *available*. These counters are how a user audits the WPM figure.
         public let hasAnything: Bool
@@ -103,8 +104,9 @@ public struct MenuViewState: Equatable, Sendable {
                 rejectedSecureInput: Format.count(day.rejectedSecureInput),
                 rejectedAutorepeat: Format.count(day.rejectedAutorepeat),
                 discardedPauses: Format.count(day.discardedPauses),
+                rejectedSelfPractice: Format.count(day.rejectedSelfPractice),
                 hasAnything: day.rejectedSynthetic + day.rejectedSecureInput
-                    + day.rejectedAutorepeat + day.discardedPauses > 0
+                    + day.rejectedAutorepeat + day.discardedPauses + day.rejectedSelfPractice > 0
             )
         )
     }
@@ -154,7 +156,8 @@ public struct MenuViewState: Equatable, Sendable {
             totalTimeCost: "—",
             diagnostics: Diagnostics(
                 rejectedSynthetic: "0", rejectedSecureInput: "0",
-                rejectedAutorepeat: "0", discardedPauses: "0", hasAnything: false
+                rejectedAutorepeat: "0", discardedPauses: "0",
+                rejectedSelfPractice: "0", hasAnything: false
             )
         )
     }

@@ -97,6 +97,27 @@ struct StatsRecorderTests {
         #expect(recorder.day[BigramIdentity(first: K.a, second: K.s)]?.count == 1)
     }
 
+    @Test("keystrokes in excluded apps (own practice window) never enter the day")
+    func selfPracticeExcluded() {
+        let recorder = makeRecorder()
+        var config = RecorderConfig()
+        config.excludedBundleIDs = ["com.alexiscodingbits.fumble"]
+        recorder.config = config
+
+        recorder.record(KeyEvent(key: K.a, timestamp: 0, appBundleID: "com.apple.Terminal"))
+        // Drill typing inside Fumble itself: must not count, and must not fabricate a bigram
+        // bridging into the next real keystroke.
+        recorder.record(KeyEvent(key: K.z, timestamp: 0.1, appBundleID: "com.alexiscodingbits.fumble"))
+        recorder.record(KeyEvent(key: K.z, timestamp: 0.2, appBundleID: "com.alexiscodingbits.fumble"))
+        recorder.record(KeyEvent(key: K.s, timestamp: 0.3, appBundleID: "com.apple.Terminal"))
+
+        #expect(recorder.day.rejectedSelfPractice == 2)
+        #expect(recorder.day.totalPresses == 2)                    // a and s only
+        #expect(recorder.day[K.z] == nil)                          // drill reps never recorded
+        #expect(recorder.day[BigramIdentity(first: K.a, second: K.s)] == nil)   // sequence broken
+        #expect(recorder.day.apps["com.alexiscodingbits.fumble"] == nil)
+    }
+
     // MARK: - Corrections
 
     @Test("backspace attributes a correction to the preceding key")

@@ -261,6 +261,8 @@ struct DropdownView: View {
                         diagnosticRow("Key autorepeat", state.diagnostics.rejectedAutorepeat, help: "Held keys aren't typing.")
                         diagnosticRow("Pauses ignored", state.diagnostics.discardedPauses,
                                       help: "Gaps too long to be finger movement — thinking, not typing.")
+                        diagnosticRow("Practice typing", state.diagnostics.rejectedSelfPractice,
+                                      help: "Typed inside Fumble's own practice window. Kept out of your daily stats so drills can't distort them.")
                     }
                     .padding(.top, 3)
                 } label: {

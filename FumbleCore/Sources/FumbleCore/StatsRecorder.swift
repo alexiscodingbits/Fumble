@@ -41,6 +41,10 @@ public struct RecorderConfig: Sendable {
     public var idleThresholdSeconds: Double = 5
     /// Bigrams below this count are dropped on persist. See `DayStats.pruneRareBigrams`.
     public var minimumBigramCount: UInt64 = 3
+    /// Keystrokes typed into these apps are excluded entirely (counted as `rejectedSelfPractice`).
+    /// The app puts its own bundle ID here: drill text is synthetic and aimed at your weak keys,
+    /// so letting it into the day would corrupt the model that generated it.
+    public var excludedBundleIDs: Set<String> = []
 
     public init() {}
 }
@@ -82,6 +86,12 @@ public final class StatsRecorder {
     public func record(_ event: KeyEvent) {
         // --- Rejections, counted for auditability rather than silently dropped. ---
 
+        if let bundleID = event.appBundleID, config.excludedBundleIDs.contains(bundleID) {
+            day.rejectedSelfPractice += 1
+            // Sequence break: the keys either side of a practice session are not a real bigram.
+            breakSequence()
+            return
+        }
         if event.isSecureInput {
             day.rejectedSecureInput += 1
             // Sequence break: the keys either side of a password are not a real bigram.
