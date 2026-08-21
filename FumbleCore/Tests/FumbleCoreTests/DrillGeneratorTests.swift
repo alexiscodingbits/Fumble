@@ -105,10 +105,10 @@ struct DrillGeneratorTests {
         #expect(targets.keyCodes.contains(6))
     }
 
-    @Test("the default word pool is all typeable")
-    func poolIsTypeable() {
-        // Every character in the shipped pool must map to a key, or scoring silently misses it.
-        for word in WordList.common {
+    @Test("the shipped word pools are all typeable", arguments: [WordList.common, WordList.english])
+    func poolIsTypeable(pool: [String]) {
+        // Every character in the shipped pools must map to a key, or scoring silently misses it.
+        for word in pool {
             for character in word {
                 #expect(KeyIdentity.characterToKeyCode[character] != nil,
                         "‘\(character)’ in “\(word)” has no keycode mapping")

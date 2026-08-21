@@ -138,6 +138,103 @@ struct TrainerLessonGeneratorTests {
         #expect(TrainerLessonGenerator.generate(unlocked: [], focus: nil, wordCount: 10, using: &rng) == "")
     }
 
+    // MARK: Natural-words blending
+
+    // All spelled from the letters e t a o i n s r h l only, so they survive the unlocked
+    // filter. Every word is >= 6 letters while pseudo-words are 3-5, so output length
+    // classifies which path produced a word.
+    private var rWords: [String] {
+        ["rattle", "raisin", "reason", "relate", "rental", "retain", "retail", "shorter",
+         "another", "lantern", "hornet", "learns", "linear", "trains", "hearts", "starts"]
+    }
+    private var plainWords: [String] {
+        ["hassle", "listen", "silent", "hostel", "lesson", "talent", "season", "sonnet",
+         "toilet", "tinsel", "insole", "salient", "athlete", "hotline"]
+    }
+
+    @Test("a rich focus pool yields all natural words, about half containing the focus")
+    func naturalWordsFullBlend() {
+        let unlocked = keys("etaoinsrhl")
+        let focus = KeyIdentity(keyCode: code("r"))
+        var rng = SeededRNG(seed: 17)
+        let text = TrainerLessonGenerator.generate(
+            unlocked: unlocked, focus: focus, wordCount: 200,
+            naturalWords: rWords + plainWords, using: &rng
+        )
+        let words = text.split(separator: " ").map(String.init)
+        let pool = Set(rWords + plainWords)
+        #expect(words.count == 200)
+        #expect(words.allSatisfy { pool.contains($0) })   // 16 focus words >= 10: no pseudo-words
+        let focusShare = Double(words.filter { $0.contains("r") }.count) / Double(words.count)
+        #expect(focusShare > 0.35 && focusShare < 0.65)
+    }
+
+    @Test("a thin focus pool blends natural and pseudo-words rather than cliffing")
+    func naturalWordsThinBlend() {
+        let unlocked = keys("etaoinsrhl")
+        let focus = KeyIdentity(keyCode: code("r"))
+        // Only 4 focus-containing words: 4/10 of slots should go natural, the rest pseudo.
+        let thin = Array(rWords.prefix(4)) + plainWords
+        var rng = SeededRNG(seed: 23)
+        let text = TrainerLessonGenerator.generate(
+            unlocked: unlocked, focus: focus, wordCount: 150, naturalWords: thin, using: &rng
+        )
+        let words = text.split(separator: " ").map(String.init)
+        let pool = Set(thin)
+        let natural = words.filter { pool.contains($0) }.count
+        let pseudo = words.filter { !pool.contains($0) }.count
+        #expect(natural > 20)   // still uses the real words it has...
+        #expect(pseudo > 20)    // ...but tops up with pseudo-words, no hard cutoff
+    }
+
+    @Test("without a focus, a big enough natural pool replaces pseudo-words entirely")
+    func naturalWordsNoFocus() {
+        let unlocked = keys("etaoinsrhl")
+        let pool = rWords + plainWords   // 30 words >= the 15-word minimum
+        var rng = SeededRNG(seed: 29)
+        let text = TrainerLessonGenerator.generate(
+            unlocked: unlocked, focus: nil, wordCount: 60, naturalWords: pool, using: &rng
+        )
+        let poolSet = Set(pool)
+        #expect(text.split(separator: " ").allSatisfy { poolSet.contains(String($0)) })
+
+        // Below the minimum it stays entirely on pseudo-words (3-5 letters, pool words are 6+).
+        var rng2 = SeededRNG(seed: 29)
+        let sparse = TrainerLessonGenerator.generate(
+            unlocked: unlocked, focus: nil, wordCount: 60,
+            naturalWords: Array(pool.prefix(10)), using: &rng2
+        )
+        #expect(sparse.split(separator: " ").allSatisfy { (3...5).contains($0.count) })
+    }
+
+    @Test("the natural path still only ever emits unlocked letters")
+    func naturalPathOnlyUnlocked() {
+        let unlocked = keys("etaoinsr")
+        let focus = KeyIdentity(keyCode: code("r"))
+        // Pool mixes usable words with words containing locked letters (z, b, x, c, u, q, d, w…),
+        // which must be filtered out, not partially emitted.
+        let mixed = rWords + plainWords + ["zebra", "extra", "record", "quicker", "browser"]
+        var rng = SeededRNG(seed: 31)
+        let text = TrainerLessonGenerator.generate(
+            unlocked: unlocked, focus: focus, wordCount: 120, naturalWords: mixed, using: &rng
+        )
+        let allowed = Set("etaoinsr ")
+        #expect(text.allSatisfy { allowed.contains($0) })
+    }
+
+    @Test("natural blending is deterministic for a given seed")
+    func naturalDeterministic() {
+        let unlocked = keys("etaoinsrhl")
+        let focus = KeyIdentity(keyCode: code("r"))
+        var a = SeededRNG(seed: 41)
+        var b = SeededRNG(seed: 41)
+        let pool = rWords + plainWords
+        #expect(TrainerLessonGenerator.generate(unlocked: unlocked, focus: focus, wordCount: 40,
+                                                naturalWords: pool, using: &a)
+                == TrainerLessonGenerator.generate(unlocked: unlocked, focus: focus, wordCount: 40,
+                                                   naturalWords: pool, using: &b))
+    }
+
     @Test("estimatedWPM derives from median latency")
     func estimatedWPM() throws {
         var stat = KeyStat()
