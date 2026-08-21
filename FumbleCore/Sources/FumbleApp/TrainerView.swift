@@ -12,8 +12,10 @@ struct TrainerView: View {
     @State private var drill = DrillState(target: "")
     @State private var now: Double = ProcessInfo.processInfo.systemUptime
     @FocusState private var focused: Bool
+    @State private var errorFlash = false
 
     @State private var sessionStart: Double?
+    @State private var passageStart: Double?
     @State private var completedChars = 0
 
     private let ticker = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
@@ -41,26 +43,43 @@ struct TrainerView: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            if let focus = trainer.focusKey {
-                HStack(spacing: 8) {
-                    Text("Focus").font(.caption).foregroundStyle(.secondary)
-                    Text(focus.label)
-                        .font(.system(.title, design: .monospaced).weight(.bold))
-                        .foregroundStyle(Color.accentColor)
-                    if let finger = focus.homeFinger {
-                        Text(finger.displayName).font(.caption).foregroundStyle(.secondary)
-                            .lineLimit(1).layoutPriority(-1)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                if let focus = trainer.focusKey {
+                    HStack(spacing: 8) {
+                        Text("Focus").font(.caption).foregroundStyle(.secondary)
+                        Text(focus.label)
+                            .font(.system(.title, design: .monospaced).weight(.bold))
+                            .foregroundStyle(Color.accentColor)
+                        if let finger = focus.homeFinger {
+                            Text(finger.displayName).font(.caption).foregroundStyle(.secondary)
+                                .lineLimit(1).layoutPriority(-1)
+                        }
+                    }
+                } else {
+                    Label("All letters mastered", systemImage: "checkmark.seal.fill")
+                        .font(.headline).foregroundStyle(.green)
+                }
+                Spacer()
+                stat(liveWPM.map { "\(Int($0.rounded()))" } ?? "—", "wpm")
+                stat("\(trainer.unlockedKeys.count)/26", "letters")
+                stat(String(format: "%.0f", coordinator.targetWPM), "target")
+            }
+            // keybr's per-key feedback line: how the focus letter is actually progressing.
+            if let focus = trainer.focusKey, let last = trainer.lastWPM(for: focus) {
+                HStack(spacing: 10) {
+                    Text("Last \(Int(last.rounded())) wpm")
+                    if let top = trainer.topWPM(for: focus) {
+                        Text("Top \(Int(top.rounded())) wpm")
+                    }
+                    if let rate = trainer.learningRate(for: focus) {
+                        Text(String(format: "%@%.1f wpm/lesson", rate >= 0 ? "+" : "", rate))
+                            .foregroundStyle(rate >= 0 ? Color.green : Color.orange)
                     }
                 }
-            } else {
-                Label("All letters mastered", systemImage: "checkmark.seal.fill")
-                    .font(.headline).foregroundStyle(.green)
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
             }
-            Spacer()
-            stat(liveWPM.map { "\(Int($0.rounded()))" } ?? "—", "wpm")
-            stat("\(trainer.unlockedKeys.count)/26", "letters")
-            stat(String(format: "%.0f", coordinator.targetWPM), "target")
         }
     }
 
@@ -99,14 +118,23 @@ struct TrainerView: View {
 
     private var typingSurface: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(attributedTarget)
+            Text(TypingText.render(
+                target: drill.target, statuses: drill.statuses,
+                showWhitespaceDots: coordinator.showWhitespaceDots,
+                cursorStyle: coordinator.cursorStyle
+            ))
                 .font(.system(size: 22, design: .monospaced))
                 .lineSpacing(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
                 .background(Color(nsColor: .underPageBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(focused ? Color.accentColor.opacity(0.6) : .clear, lineWidth: 2))
+                    .strokeBorder(
+                        errorFlash ? Color.red.opacity(0.8)
+                            : focused ? Color.accentColor.opacity(0.6) : .clear,
+                        lineWidth: 2
+                    ))
+                .animation(.easeOut(duration: 0.15), value: errorFlash)
                 .focusable()
                 .focused($focused)
                 .onKeyPress(phases: .down) { handle($0) }
@@ -117,23 +145,6 @@ struct TrainerView: View {
         .onAppear { focused = true }
         .contentShape(Rectangle())
         .onTapGesture { focused = true }
-    }
-
-    private var attributedTarget: AttributedString {
-        var result = AttributedString()
-        for (index, character) in drill.target.enumerated() {
-            var piece = AttributedString(String(character))
-            switch drill.statuses[index] {
-            case .pending: piece.foregroundColor = .secondary.opacity(0.5)
-            case .correct: piece.foregroundColor = .primary
-            case .incorrect: piece.foregroundColor = .red
-            case .current:
-                piece.foregroundColor = .primary
-                piece.backgroundColor = .accentColor.opacity(0.35)
-            }
-            result += piece
-        }
-        return result
     }
 
     // MARK: - Logic
@@ -164,12 +175,24 @@ struct TrainerView: View {
         guard press.characters.count == 1, let character = press.characters.first,
               character == " " || character.isLetter else { return .ignored }
 
-        if sessionStart == nil { sessionStart = ProcessInfo.processInfo.systemUptime }
-        drill.type(character, at: ProcessInfo.processInfo.systemUptime)
+        let stamp = ProcessInfo.processInfo.systemUptime
+        if sessionStart == nil { sessionStart = stamp }
+        if passageStart == nil { passageStart = stamp }
+        drill.type(character, at: stamp)
+
+        coordinator.practiceKeystrokeFeedback(wasError: drill.lastEventWasError)
+        if drill.lastEventWasError {
+            errorFlash = true
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(180))
+                errorFlash = false
+            }
+        }
 
         if drill.isComplete {
             completedChars += drill.target.count
             trainer.record(perKeyWPM: drill.perKeyWPM())   // updates confidence + may unlock
+            if let start = passageStart { coordinator.recordPracticeTime(seconds: stamp - start) }
             loadNextLesson()
         }
         return .handled
@@ -185,10 +208,17 @@ struct TrainerView: View {
 
     private func loadNextLesson() {
         var rng = SystemRandomNumberGenerator()
+        // naturalWords is what keeps rare-letter lessons readable: real q/z/x words instead of
+        // pseudo-word soup ("quick quote unique", not "qqlqq muqq").
         let text = TrainerLessonGenerator.generate(
-            unlocked: trainer.unlockedKeys, focus: trainer.focusKey, wordCount: 24, using: &rng
+            unlocked: trainer.unlockedKeys, focus: trainer.focusKey, wordCount: 24,
+            naturalWords: WordList.english, using: &rng
         )
-        drill = DrillState(target: text)
+        drill = DrillState(
+            target: text,
+            errorHandling: DrillState.ErrorHandling(rawValue: coordinator.typingAssistRaw) ?? .advance
+        )
+        passageStart = nil
         focused = true
     }
 }

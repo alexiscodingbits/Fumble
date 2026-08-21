@@ -9,13 +9,20 @@ import SwiftUI
 struct DrillView: View {
     let coordinator: AppCoordinator
 
+    /// Where this surface gets its passages. Defaults to the weak-spot drill; other practice
+    /// modes (custom text, numbers, code) inject their own generator and reuse everything else.
+    var makePassage: ((AppCoordinator) -> DrillPlan)?
+
     @State private var plan = DrillPlan(text: "", focus: [])
     @State private var drill = DrillState(target: "")
     @State private var now: Double = ProcessInfo.processInfo.systemUptime
     @FocusState private var focused: Bool
+    /// Set for one beat after a wrong keystroke; drives the border flash.
+    @State private var errorFlash = false
 
     // Session accumulators, across completed passages this session.
     @State private var sessionStart: Double?
+    @State private var passageStart: Double?
     @State private var completedChars = 0
     @State private var completedTyped = 0
     @State private var completedErrors = 0
@@ -93,7 +100,11 @@ struct DrillView: View {
     }
 
     private var drillText: some View {
-        Text(attributedTarget)
+        Text(TypingText.render(
+            target: drill.target, statuses: drill.statuses,
+            showWhitespaceDots: coordinator.showWhitespaceDots,
+            cursorStyle: coordinator.cursorStyle
+        ))
             .font(.system(size: 22, design: .monospaced))
             .lineSpacing(8)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -101,29 +112,13 @@ struct DrillView: View {
             .background(Color(nsColor: .underPageBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(focused ? Color.accentColor.opacity(0.6) : .clear, lineWidth: 2)
+                    .strokeBorder(
+                        errorFlash ? Color.red.opacity(0.8)
+                            : focused ? Color.accentColor.opacity(0.6) : .clear,
+                        lineWidth: 2
+                    )
             )
-    }
-
-    private var attributedTarget: AttributedString {
-        var result = AttributedString()
-        for (index, character) in drill.target.enumerated() {
-            var piece = AttributedString(String(character))
-            switch drill.statuses[index] {
-            case .pending:
-                piece.foregroundColor = .secondary.opacity(0.5)
-            case .correct:
-                piece.foregroundColor = .primary
-            case .incorrect:
-                piece.foregroundColor = .red
-                if character == " " { piece.underlineStyle = .single }
-            case .current:
-                piece.foregroundColor = .primary
-                piece.backgroundColor = .accentColor.opacity(0.35)
-            }
-            result += piece
-        }
-        return result
+            .animation(.easeOut(duration: 0.15), value: errorFlash)
     }
 
     private var footer: some View {
@@ -166,11 +161,24 @@ struct DrillView: View {
         }
 
         guard press.characters.count == 1, let character = press.characters.first,
-              character == " " || character.isLetter || character.isNumber || character.isPunctuation
+              character == " " || character.isLetter || character.isNumber
+                || character.isPunctuation || character.isSymbol
         else { return .ignored }
 
-        if sessionStart == nil { sessionStart = ProcessInfo.processInfo.systemUptime }
-        drill.type(character, at: ProcessInfo.processInfo.systemUptime)
+        let stamp = ProcessInfo.processInfo.systemUptime
+        if sessionStart == nil { sessionStart = stamp }
+        if passageStart == nil { passageStart = stamp }
+        drill.type(character, at: stamp)
+
+        // Feedback: sounds per settings, and a brief border flash on error.
+        coordinator.practiceKeystrokeFeedback(wasError: drill.lastEventWasError)
+        if drill.lastEventWasError {
+            errorFlash = true
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(180))
+                errorFlash = false
+            }
+        }
 
         // Continuous flow: finishing a passage rolls its counts into the session and loads the
         // next one seamlessly, so there's no dead end and no button to press.
@@ -179,6 +187,8 @@ struct DrillView: View {
             completedTyped += drill.totalTyped
             completedErrors += drill.errors
             passagesDone += 1
+            // Daily-goal accounting: the wall-clock span of this passage.
+            if let start = passageStart { coordinator.recordPracticeTime(seconds: stamp - start) }
             loadNextPassage()
         }
         return .handled
@@ -196,8 +206,12 @@ struct DrillView: View {
     }
 
     private func loadNextPassage() {
-        plan = coordinator.makeDrill()
-        drill = DrillState(target: plan.text)
+        plan = makePassage.map { $0(coordinator) } ?? coordinator.makeDrill()
+        drill = DrillState(
+            target: plan.text,
+            errorHandling: DrillState.ErrorHandling(rawValue: coordinator.typingAssistRaw) ?? .advance
+        )
+        passageStart = nil   // stamps on the first keystroke of the new passage
         focused = true
     }
 }

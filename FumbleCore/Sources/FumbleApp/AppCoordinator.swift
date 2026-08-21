@@ -368,7 +368,11 @@ public final class AppCoordinator {
         let targets = analysis.map { DrillGenerator.Targets(analysis: $0) } ?? DrillGenerator.Targets()
 
         var rng = SystemRandomNumberGenerator()
-        let text = DrillGenerator().generate(targets: targets, wordCount: wordCount, using: &rng)
+        // The drill pool merges both lists: `common` carries the programmer-ish words (commit,
+        // struct, rebase), `english` the breadth. Order-preserving dedup keeps generation stable.
+        var seen = Set<String>()
+        let pool = (WordList.common + WordList.english).filter { seen.insert($0).inserted }
+        let text = DrillGenerator(words: pool).generate(targets: targets, wordCount: wordCount, using: &rng)
 
         // Focus labels: the weak keys and transitions this drill leans on, for display.
         var focus: [String] = []

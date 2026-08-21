@@ -1,11 +1,33 @@
+import FumbleUI
 import SwiftUI
 
-/// Trainer and data settings.
+/// Trainer, practice-feel, goal, and data settings.
 struct SettingsPaneView: View {
     let coordinator: AppCoordinator
 
     private var targetWPM: Binding<Double> {
         Binding(get: { coordinator.targetWPM }, set: { coordinator.targetWPM = $0 })
+    }
+    private var typingAssist: Binding<DrillState.ErrorHandling> {
+        Binding(
+            get: { DrillState.ErrorHandling(rawValue: coordinator.typingAssistRaw) ?? .advance },
+            set: { coordinator.typingAssistRaw = $0.rawValue }
+        )
+    }
+    private var soundMode: Binding<SoundMode> {
+        Binding(get: { coordinator.soundMode }, set: { coordinator.soundMode = $0 })
+    }
+    private var soundVolume: Binding<Double> {
+        Binding(get: { coordinator.soundVolume }, set: { coordinator.soundVolume = $0 })
+    }
+    private var whitespaceDots: Binding<Bool> {
+        Binding(get: { coordinator.showWhitespaceDots }, set: { coordinator.showWhitespaceDots = $0 })
+    }
+    private var cursorStyle: Binding<CursorStyle> {
+        Binding(get: { coordinator.cursorStyle }, set: { coordinator.cursorStyle = $0 })
+    }
+    private var goalMinutes: Binding<Double> {
+        Binding(get: { Double(coordinator.dailyGoalMinutes) }, set: { coordinator.dailyGoalMinutes = Int($0) })
     }
 
     var body: some View {
@@ -18,7 +40,48 @@ struct SettingsPaneView: View {
                         Text("\(Int(coordinator.targetWPM)) WPM").monospacedDigit().foregroundStyle(.secondary)
                     }
                     Slider(value: targetWPM, in: 15...120, step: 5)
-                    Text("A letter is 'mastered' — and the next unlocks — once you reach this speed on it. keybr's default is 35.")
+                    Text("A letter is 'mastered' — and the next unlocks — once you reach this speed on it.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            Section("Typing") {
+                Picker("On a wrong key", selection: typingAssist) {
+                    Text("Keep going — fix with ⌫").tag(DrillState.ErrorHandling.advance)
+                    Text("Stop until correct").tag(DrillState.ErrorHandling.stopUntilCorrect)
+                }
+                Text("'Stop until correct' is how most tutors teach accuracy: the cursor waits at a mistake. 'Keep going' favours flow and rewards self-correction.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle("Show spaces as dots", isOn: whitespaceDots)
+                Picker("Cursor", selection: cursorStyle) {
+                    ForEach(CursorStyle.allCases) { Text($0.title).tag($0) }
+                }
+            }
+
+            Section("Sounds") {
+                Picker("Play sounds", selection: soundMode) {
+                    ForEach(SoundMode.allCases) { Text($0.title).tag($0) }
+                }
+                if coordinator.soundMode != .off {
+                    HStack {
+                        Text("Volume")
+                        Slider(value: soundVolume, in: 0...1)
+                        Button("Test") { coordinator.sounds.key(volume: coordinator.soundVolume) }
+                            .buttonStyle(.borderless)
+                    }
+                }
+            }
+
+            Section("Daily goal") {
+                VStack(alignment: .leading) {
+                    HStack {
+                        Text("Practice goal")
+                        Spacer()
+                        Text(coordinator.dailyGoalMinutes == 0 ? "Off" : "\(coordinator.dailyGoalMinutes) min/day")
+                            .monospacedDigit().foregroundStyle(.secondary)
+                    }
+                    Slider(value: goalMinutes, in: 0...60, step: 5)
+                    Text("A reminder, never a limit. Streaks count days you met the goal.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -26,7 +89,7 @@ struct SettingsPaneView: View {
             Section("Data") {
                 Button("Show data in Finder") { coordinator.revealDataInFinder() }
                 Button("Delete all data", role: .destructive) { coordinator.deleteAllData() }
-                Text("\(bytesString) on disk · local only, no account, no network. Fumble records which keys and when, never the characters you type.")
+                Text("\(bytesString) on disk · local only, no account, no network. Fumble records which keys and when, never the characters you type. Typing inside Fumble's own practice window is excluded from your daily stats.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
