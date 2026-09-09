@@ -32,17 +32,18 @@ struct TrainerView: View {
     private let ticker = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                header
-                VirtualKeyboardView(focusKeyCode: trainer.focusKey?.keyCode, keyColor: keyColor)
-                    .frame(maxWidth: .infinity)
-                Text("Keys: your relative speed (warmer = slower) · grey = locked · blue outline = being practised")
-                    .font(.caption2).foregroundStyle(.tertiary)
-                typingSurface
-            }
-            .padding(24)
+        // A plain VStack like the other practice tabs — the ScrollView dated from when the
+        // (since-removed) confidence bars made the pane taller than the window.
+        VStack(alignment: .leading, spacing: 16) {
+            header
+            VirtualKeyboardView(focusKeyCode: trainer.focusKey?.keyCode, keyColor: keyColor)
+                .frame(maxWidth: .infinity)
+            Text("Keys: your relative speed (warmer = slower) · grey = locked · blue outline = being practised")
+                .font(.caption2).foregroundStyle(.tertiary)
+            typingSurface
         }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear { if drill.target.isEmpty { startSession() } }
         .onReceive(ticker) { _ in now = ProcessInfo.processInfo.systemUptime }
     }
