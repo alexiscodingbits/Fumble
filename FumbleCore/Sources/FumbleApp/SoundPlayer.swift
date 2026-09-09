@@ -25,8 +25,10 @@ enum SoundMode: String, CaseIterable, Identifiable {
 /// and overlapping presses use different instances instead of cutting each other off.
 @MainActor
 final class SoundPlayer {
-    /// "Pop" is the closest built-in to a key click; "Tink" (the old choice) is a ding.
-    private let keySoundName = "Pop"
+    /// The bundled key click (a real keyboard sample). Falls back to the system "Pop" if the
+    /// resource can't be found, so a packaging mistake degrades rather than silences.
+    private let keyClickResource = "key-click"
+    private let keyFallbackName = "Pop"
     /// Distinctly negative for an error.
     private let errorSoundName = "Basso"
 
@@ -34,30 +36,48 @@ final class SoundPlayer {
     private let poolSize = 4
 
     func key(volume: Double) {
-        play(named: keySoundName, volume: volume)
+        if let url = Self.keyClickURL {
+            play(key: "key-click", volume: volume) { NSSound(contentsOf: url, byReference: true) }
+        } else {
+            play(key: keyFallbackName, volume: volume) { NSSound(named: self.keyFallbackName)?.copy() as? NSSound }
+        }
     }
 
     func error(volume: Double) {
-        play(named: errorSoundName, volume: volume)
+        play(key: errorSoundName, volume: volume) { NSSound(named: self.errorSoundName)?.copy() as? NSSound }
     }
 
-    private func play(named name: String, volume: Double) {
+    /// The bundled sample's URL. `Bundle.module` works in dev builds; in the assembled .app the
+    /// resource bundle lives under Contents/Resources and `Bundle.module` can miss it (the same
+    /// gotcha Claudometer hit), so fall back to searching there by hand.
+    private static let keyClickURL: URL? = {
+        if let url = Bundle.module.url(forResource: "key-click", withExtension: "wav") {
+            return url
+        }
+        if let resources = Bundle.main.resourceURL {
+            for layout in ["FumbleCore_FumbleApp.bundle/Contents/Resources/key-click.wav",
+                           "FumbleCore_FumbleApp.bundle/key-click.wav"] {
+                let candidate = resources.appendingPathComponent(layout)
+                if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+            }
+        }
+        return nil
+    }()
+
+    private func play(key: String, volume: Double, make: () -> NSSound?) {
         guard volume > 0 else { return }
 
-        if pools[name] == nil {
-            // Distinct instances via copy(): NSSound(named:) can hand back shared storage, and a
-            // shared instance can't overlap with itself.
-            let instances = (0..<poolSize).compactMap { _ in
-                NSSound(named: name)?.copy() as? NSSound
-            }
+        if pools[key] == nil {
+            // Distinct instances so rapid presses overlap instead of cutting each other off.
+            let instances = (0..<poolSize).compactMap { _ in make() }
             guard !instances.isEmpty else { return }
-            pools[name] = (instances, 0)
+            pools[key] = (instances, 0)
         }
-        guard var pool = pools[name], !pool.sounds.isEmpty else { return }
+        guard var pool = pools[key], !pool.sounds.isEmpty else { return }
 
         let sound = pool.sounds[pool.next]
         pool.next = (pool.next + 1) % pool.sounds.count
-        pools[name] = pool
+        pools[key] = pool
 
         sound.stop()   // rewind if this instance is still playing from poolSize presses ago
         sound.volume = Float(min(max(volume, 0), 1))

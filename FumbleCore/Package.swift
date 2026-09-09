@@ -18,7 +18,11 @@ let package = Package(
         // Debug/inspection CLI. Dumps today's stats as text or JSON.
         .executableTarget(name: "fumble-cli", dependencies: ["FumbleCore"]),
         // The ONLY target importing SwiftUI/AppKit/CoreGraphics.
-        .executableTarget(name: "FumbleApp", dependencies: ["FumbleCore", "FumbleUI"]),
+        .executableTarget(
+            name: "FumbleApp",
+            dependencies: ["FumbleCore", "FumbleUI"],
+            resources: [.process("Resources")]
+        ),
         .testTarget(name: "FumbleCoreTests", dependencies: ["FumbleCore"]),
         .testTarget(name: "FumbleUITests", dependencies: ["FumbleUI", "FumbleCore"]),
     ]

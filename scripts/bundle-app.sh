@@ -58,6 +58,12 @@ APP="$WORK/Fumble.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/FumbleApp" "$APP/Contents/MacOS/Fumble"
 
+# SwiftPM resource bundles (the key-click sample lives in FumbleCore_FumbleApp.bundle). Copy
+# any that were built; SoundPlayer looks them up under Contents/Resources.
+for bundle in "$BIN"/FumbleCore_*.bundle; do
+  [ -d "$bundle" ] && cp -R "$bundle" "$APP/Contents/Resources/"
+done
+
 ARCHS=$(lipo -archs "$APP/Contents/MacOS/Fumble")
 echo "Binary archs: $ARCHS"
 for required in arm64 x86_64; do
