@@ -51,6 +51,9 @@ public final class AppCoordinator {
     var cursorStyle: CursorStyle {
         didSet { UserDefaults.standard.set(cursorStyle.rawValue, forKey: "cursorStyle") }
     }
+    var appearance: AppearanceMode {
+        didSet { UserDefaults.standard.set(appearance.rawValue, forKey: "appearance") }
+    }
     /// Daily practice goal in minutes; 0 = off. A reminder, never a limit.
     public var dailyGoalMinutes: Int {
         didSet { UserDefaults.standard.set(dailyGoalMinutes, forKey: "dailyGoalMinutes") }
@@ -125,6 +128,7 @@ public final class AppCoordinator {
         self.showWhitespaceDots = defaults.object(forKey: "showWhitespaceDots") != nil
             ? defaults.bool(forKey: "showWhitespaceDots") : true
         self.cursorStyle = defaults.string(forKey: "cursorStyle").flatMap(CursorStyle.init(rawValue:)) ?? .block
+        self.appearance = defaults.string(forKey: "appearance").flatMap(AppearanceMode.init(rawValue:)) ?? .system
         self.dailyGoalMinutes = defaults.object(forKey: "dailyGoalMinutes") != nil
             ? defaults.integer(forKey: "dailyGoalMinutes") : 15
         // Custom text lives as a file in the data directory (see customPracticeText). A one-time
@@ -396,9 +400,20 @@ public final class AppCoordinator {
     /// Build a drill targeting the user's current weak spots, using the richest data available:
     /// today if it's substantial, otherwise the merged history. Falls back to an unweighted
     /// warm-up when there isn't enough data to rank anything yet.
+    ///
+    /// Targets combine BOTH weakness signals from real typing: slow keys/transitions (latency)
+    /// and mistype-prone keys (the ones you backspace most). A key can be fast but sloppy —
+    /// accuracy problems deserve drilling as much as speed problems.
     public func makeDrill(wordCount: Int = 30) -> DrillPlan {
-        let analysis = bestAnalysis()
-        let targets = analysis.map { DrillGenerator.Targets(analysis: $0) } ?? DrillGenerator.Targets()
+        let best = bestAnalysis()
+        var targets = best.map { DrillGenerator.Targets(analysis: $0.analysis) } ?? DrillGenerator.Targets()
+
+        var correctedLabels: [String] = []
+        if let (analysis, day) = best {
+            let corrected = analysis.mostCorrected(in: day, limit: 3)
+            targets.keyCodes.formUnion(corrected.map { $0.0.keyCode })
+            correctedLabels = corrected.map { $0.0.label }
+        }
 
         var rng = SystemRandomNumberGenerator()
         // The drill pool merges both lists: `common` carries the programmer-ish words (commit,
@@ -409,8 +424,9 @@ public final class AppCoordinator {
 
         // Focus labels: the weak keys and transitions this drill leans on, for display.
         var focus: [String] = []
-        if let analysis {
+        if let (analysis, _) = best {
             focus += analysis.keys.prefix(5).map(\.label)
+            focus += correctedLabels.filter { !focus.contains($0) }
             focus += analysis.drillable.compactMap { spot -> String? in
                 if case .bigram = spot.target { return spot.label }
                 return nil
@@ -419,14 +435,16 @@ public final class AppCoordinator {
         return DrillPlan(text: text, focus: focus)
     }
 
-    /// The best weak-spot analysis we can produce right now: today if it clears the gates,
-    /// otherwise the merged history.
-    private func bestAnalysis() -> WeakSpots.Analysis? {
-        if let today = WeakSpots.analyse(recorder.day) { return today }
+    /// The best weak-spot analysis we can produce right now — with the day it was computed
+    /// from, so callers can pull correction stats from the same data.
+    private func bestAnalysis() -> (analysis: WeakSpots.Analysis, day: DayStats)? {
+        if let today = WeakSpots.analyse(recorder.day) { return (today, recorder.day) }
         flush()
         let all = store.loadAll()
         guard !all.isEmpty else { return nil }
-        return WeakSpots.analyse(DayStats.merging(all, date: recorder.day.date))
+        let merged = DayStats.merging(all, date: recorder.day.date)
+        guard let analysis = WeakSpots.analyse(merged) else { return nil }
+        return (analysis, merged)
     }
 
     /// The one trainer instance for this session. Living here (not in view @State) means pane

@@ -59,6 +59,7 @@ struct PracticeAppView: View {
             }
         }
         .frame(minWidth: 760, minHeight: 560)
+        .preferredColorScheme(coordinator.appearance.colorScheme)
         // Become a regular app (Dock icon + menus) while the window is open; drop back to a
         // menu-bar accessory when it closes.
         .onAppear {

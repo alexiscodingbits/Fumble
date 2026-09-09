@@ -29,6 +29,9 @@ struct SettingsPaneView: View {
     private var goalMinutes: Binding<Double> {
         Binding(get: { Double(coordinator.dailyGoalMinutes) }, set: { coordinator.dailyGoalMinutes = Int($0) })
     }
+    private var appearance: Binding<AppearanceMode> {
+        Binding(get: { coordinator.appearance }, set: { coordinator.appearance = $0 })
+    }
 
     var body: some View {
         Form {
@@ -56,6 +59,13 @@ struct SettingsPaneView: View {
                 Picker("Cursor", selection: cursorStyle) {
                     ForEach(CursorStyle.allCases) { Text($0.title).tag($0) }
                 }
+            }
+
+            Section("Appearance") {
+                Picker("Theme", selection: appearance) {
+                    ForEach(AppearanceMode.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
             }
 
             Section("Sounds") {

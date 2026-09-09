@@ -23,15 +23,20 @@ struct StatsPaneView: View {
                         .frame(maxWidth: .infinity)
 
                     if let day, let analysis = WeakSpots.analyse(day) {
-                        weakList("Weak keys", rows: analysis.keys.prefix(6).map {
-                            ($0.label, $0.timeCostSeconds, Int($0.p95))
-                        })
-                        weakList("Weak transitions", rows: analysis.drillable.compactMap { spot in
-                            if case .bigram = spot.target {
-                                return (spot.label, spot.timeCostSeconds, Int(spot.p95))
-                            }
-                            return nil
-                        }.prefix(6).map { $0 })
+                        // Side by side and stripped to the one number that matters (time lost);
+                        // the per-press latency lives in a tooltip. Two visible columns of
+                        // numbers was information overload.
+                        HStack(alignment: .top, spacing: 32) {
+                            weakList("Weak keys", rows: analysis.keys.prefix(6).map {
+                                ($0.label, $0.timeCostSeconds, Int($0.p95))
+                            })
+                            weakList("Weak transitions", rows: analysis.drillable.compactMap { spot in
+                                if case .bigram = spot.target {
+                                    return (spot.label, spot.timeCostSeconds, Int(spot.p95))
+                                }
+                                return nil
+                            }.prefix(6).map { $0 })
+                        }
                     }
                 }
             }
@@ -48,30 +53,25 @@ struct StatsPaneView: View {
     }
 
     private func weakList(_ title: String, rows: [(String, Double, Int)]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // Title on the left, column headers aligned over their columns.
+        VStack(alignment: .leading, spacing: 3) {
             HStack {
                 Text(title).font(.headline)
                 Spacer()
-                Text("slow reach").font(.caption2).foregroundStyle(.tertiary)
-                    .frame(width: 80, alignment: .trailing)
-                    .help("Your 95th-percentile reach time for this — how slow your slower hits are")
                 Text("time lost").font(.caption2).foregroundStyle(.tertiary)
-                    .frame(width: 80, alignment: .trailing)
-                    .help("Total time this cost you today versus your own baseline")
+                    .help("Total time this cost you versus your own baseline")
             }
+            .padding(.bottom, 2)
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 HStack {
-                    Text(row.0).font(.system(.body, design: .monospaced).weight(.medium))
-                        .frame(minWidth: 60, alignment: .leading)
-                    Spacer()
-                    Text("\(row.2)ms").font(.caption.monospaced()).foregroundStyle(.secondary)
-                        .frame(width: 80, alignment: .trailing)
-                    Text(durationString(row.1)).font(.caption.monospaced())
-                        .frame(width: 80, alignment: .trailing)
+                    Text(row.0).font(.system(.callout, design: .monospaced).weight(.medium))
+                    Spacer(minLength: 16)
+                    Text(durationString(row.1)).font(.callout.monospaced()).foregroundStyle(.secondary)
                 }
+                // The per-press figure is detail, not headline — hover for it.
+                .help("Typically \(row.2)ms per press at your slower end")
             }
         }
+        .frame(maxWidth: 240, alignment: .leading)
     }
 
     private func durationString(_ seconds: Double) -> String {
