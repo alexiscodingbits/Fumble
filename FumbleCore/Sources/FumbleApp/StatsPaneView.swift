@@ -22,23 +22,17 @@ struct StatsPaneView: View {
                     VirtualKeyboardView(focusKeyCode: nil, keyColor: { heatColor($0, speeds: speeds) })
                         .frame(maxWidth: .infinity)
 
+                    // One row: per-app breakdown beside the weak keys. (Weak transitions were
+                    // dropped from this pane — the drill targeting still uses them, but as a
+                    // display they duplicated what the keys column already says.)
                     if let day {
-                        whereYouType(day)
-                    }
-                    if let day, let analysis = WeakSpots.analyse(day) {
-                        // Side by side and stripped to the one number that matters (time lost);
-                        // the per-press latency lives in a tooltip. Two visible columns of
-                        // numbers was information overload.
                         HStack(alignment: .top, spacing: 32) {
-                            weakList("Weak keys", rows: analysis.keys.prefix(6).map {
-                                ($0.label, $0.timeCostSeconds, Int($0.p95))
-                            })
-                            weakList("Weak transitions", rows: analysis.drillable.compactMap { spot in
-                                if case .bigram = spot.target {
-                                    return (spot.label, spot.timeCostSeconds, Int(spot.p95))
-                                }
-                                return nil
-                            }.prefix(6).map { $0 })
+                            whereYouType(day)
+                            if let analysis = WeakSpots.analyse(day) {
+                                weakList("Weak keys", rows: analysis.keys.prefix(6).map {
+                                    ($0.label, $0.timeCostSeconds, Int($0.p95))
+                                })
+                            }
                         }
                     }
                 }
