@@ -179,7 +179,7 @@ struct DropdownView: View {
         // The numbers still exist in the Stats pane for anyone who wants them.
         if !state.weakKeys.isEmpty || !state.weakBigrams.isEmpty {
             section("Needs work", caption: "Costing you \(state.totalTimeCost) today · details in Stats") {
-                chipRow(labels: state.weakKeys.prefix(6).map(\.label)
+                chipRow(labels: state.weakKeys.prefix(5).map(\.label)
                         + state.weakBigrams.prefix(4).map { $0.label.replacingOccurrences(of: "Space", with: "␣") })
             }
         }
@@ -188,18 +188,13 @@ struct DropdownView: View {
     }
 
     private func chipRow(labels: [String]) -> some View {
-        // Wrapping chip layout without a Layout dependency: chunk into rows of 6.
-        let rows = stride(from: 0, to: labels.count, by: 6).map { Array(labels[$0..<min($0 + 6, labels.count)]) }
-        return VStack(alignment: .leading, spacing: 4) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                HStack(spacing: 5) {
-                    ForEach(row, id: \.self) { label in
-                        Text(label)
-                            .font(.caption.monospaced().weight(.medium))
-                            .padding(.horizontal, 7).padding(.vertical, 2)
-                            .background(Color.accentColor.opacity(0.12), in: Capsule())
-                    }
-                }
+        // One line — 5 key chips + 4 pair chips fit the popover comfortably at caption size.
+        HStack(spacing: 4) {
+            ForEach(labels, id: \.self) { label in
+                Text(label)
+                    .font(.caption.monospaced().weight(.medium))
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Color.accentColor.opacity(0.12), in: Capsule())
             }
         }
     }
