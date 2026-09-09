@@ -73,7 +73,10 @@ struct PracticeAppView: View {
             case .settings: SettingsPaneView(coordinator: coordinator)
             }
         }
-        .frame(minWidth: 760, minHeight: 560)
+        // Fixed size: the content is fixed-layout (keyboard, lists, typing box), so a resizable
+        // window just manufactures dead space. Fixed-size is a normal pattern for compact Mac
+        // utility apps.
+        .frame(width: 860, height: 620)
         .preferredColorScheme(coordinator.appearance.colorScheme)
         // Become a regular app (Dock icon + menus) while the window is open; drop back to a
         // menu-bar accessory when it closes.

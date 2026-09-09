@@ -22,15 +22,18 @@ struct VirtualKeyboardView: View {
     private let gap: CGFloat = 6
 
     var body: some View {
-        VStack(spacing: gap) {
+        // Intrinsic width, rows left-aligned against each other (the stagger offsets), so the
+        // caller's `.frame(maxWidth: .infinity)` centres the whole board. The old stretchy
+        // trailing spacer pinned it to the left edge instead.
+        VStack(alignment: .leading, spacing: gap) {
             ForEach(Array(Self.rows.enumerated()), id: \.offset) { _, row in
                 HStack(spacing: gap) {
-                    Spacer().frame(width: row.offset * (keySize + gap))
+                    Color.clear.frame(width: row.offset * (keySize + gap), height: 1)
                     ForEach(row.keys, id: \.self) { keyCode in
                         key(keyCode)
                     }
-                    Spacer(minLength: 0)
                 }
+                .fixedSize()
             }
         }
     }

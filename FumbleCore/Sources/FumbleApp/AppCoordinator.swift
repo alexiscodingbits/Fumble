@@ -333,8 +333,15 @@ public final class AppCoordinator {
         guard Date().timeIntervalSince(trendRefreshedAt) > 60 else { return }
         trendRefreshedAt = Date()
         flush()
-        wpmTrend = store.loadAll().suffix(14).compactMap { day in
-            day.wordsPerMinute().map { TrendPoint(date: day.date, wpm: $0) }
+        // Group by calendar day and merge before charting: a timezone change (travel) can leave
+        // two day files whose dates land on the same local day, and duplicate x-values render
+        // as a vertical smear with doubled "today" points.
+        let calendar = Calendar.current
+        let grouped = Dictionary(grouping: store.loadAll()) { calendar.startOfDay(for: $0.date) }
+        wpmTrend = grouped.keys.sorted().suffix(14).compactMap { day in
+            guard let days = grouped[day] else { return nil }
+            let merged = days.count == 1 ? days[0] : DayStats.merging(days, date: day)
+            return merged.wordsPerMinute().map { TrendPoint(date: day, wpm: $0) }
         }
     }
 
