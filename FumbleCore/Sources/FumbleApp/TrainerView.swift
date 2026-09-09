@@ -190,7 +190,7 @@ struct TrainerView: View {
         lastKeystrokeStamp = stamp
         drill.type(character, at: stamp)
 
-        coordinator.practiceKeystrokeFeedback(wasError: drill.lastEventWasError)
+        coordinator.practiceKeystrokeFeedback()
         if drill.lastEventWasError {
             errorFlash = true
             errorFlashToken += 1

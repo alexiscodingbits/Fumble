@@ -91,13 +91,10 @@ public final class AppCoordinator {
 
     let sounds = SoundPlayer()
 
-    /// Play feedback for a practice keystroke, honouring the sound settings.
-    public func practiceKeystrokeFeedback(wasError: Bool) {
-        if wasError {
-            if soundMode.playsErrors { sounds.error(volume: soundVolume) }
-        } else {
-            if soundMode.playsKeys { sounds.key(volume: soundVolume) }
-        }
+    /// Play feedback for a practice keystroke, honouring the sound settings. Every physical
+    /// press clicks (you did press a key); mistakes are signalled visually only.
+    public func practiceKeystrokeFeedback() {
+        if soundMode.playsKeys { sounds.key(volume: soundVolume) }
     }
 
     private let store: StatsStore

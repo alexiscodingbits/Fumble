@@ -189,7 +189,7 @@ struct DrillView: View {
         drill.type(character, at: stamp)
 
         // Feedback: sounds per settings, and a brief border flash on error.
-        coordinator.practiceKeystrokeFeedback(wasError: drill.lastEventWasError)
+        coordinator.practiceKeystrokeFeedback()
         if drill.lastEventWasError {
             errorFlash = true
             errorFlashToken += 1

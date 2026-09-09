@@ -1,19 +1,11 @@
 import AppKit
 
-/// What practice sounds to play. Mirrors keybr's off / errors-only / keys-only / all.
+/// Key-click sounds on or off. (There is deliberately no error sound: a wrong key already gets
+/// the red border flash, and punishing mistakes with a klaxon makes practice feel bad.)
 enum SoundMode: String, CaseIterable, Identifiable {
-    case off, errors, keys, all
+    case off, keys
     var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .off: "Off"
-        case .errors: "Errors only"
-        case .keys: "Keys only"
-        case .all: "All"
-        }
-    }
-    var playsErrors: Bool { self == .errors || self == .all }
-    var playsKeys: Bool { self == .keys || self == .all }
+    var playsKeys: Bool { self == .keys }
 }
 
 /// Plays practice feedback: a bundled key-click sample (see Resources/) plus system sounds.
@@ -29,8 +21,6 @@ final class SoundPlayer {
     /// resource can't be found, so a packaging mistake degrades rather than silences.
     private let keyClickResource = "key-click"
     private let keyFallbackName = "Pop"
-    /// Distinctly negative for an error.
-    private let errorSoundName = "Basso"
 
     private var pools: [String: (sounds: [NSSound], next: Int)] = [:]
     private let poolSize = 4
@@ -41,10 +31,6 @@ final class SoundPlayer {
         } else {
             play(key: keyFallbackName, volume: volume) { NSSound(named: self.keyFallbackName)?.copy() as? NSSound }
         }
-    }
-
-    func error(volume: Double) {
-        play(key: errorSoundName, volume: volume) { NSSound(named: self.errorSoundName)?.copy() as? NSSound }
     }
 
     /// The bundled sample's URL. `Bundle.module` works in dev builds; in the assembled .app the

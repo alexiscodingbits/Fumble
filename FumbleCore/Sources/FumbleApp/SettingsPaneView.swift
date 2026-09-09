@@ -15,8 +15,8 @@ struct SettingsPaneView: View {
             set: { coordinator.typingAssistRaw = $0.rawValue }
         )
     }
-    private var soundMode: Binding<SoundMode> {
-        Binding(get: { coordinator.soundMode }, set: { coordinator.soundMode = $0 })
+    private var keyClicks: Binding<Bool> {
+        Binding(get: { coordinator.soundMode == .keys }, set: { coordinator.soundMode = $0 ? .keys : .off })
     }
     private var soundVolume: Binding<Double> {
         Binding(get: { coordinator.soundVolume }, set: { coordinator.soundVolume = $0 })
@@ -70,9 +70,7 @@ struct SettingsPaneView: View {
             }
 
             Section("Sounds") {
-                Picker("Play sounds", selection: soundMode) {
-                    ForEach(SoundMode.allCases) { Text($0.title).tag($0) }
-                }
+                Toggle("Key click sounds", isOn: keyClicks)
                 if coordinator.soundMode != .off {
                     HStack {
                         Text("Volume")
