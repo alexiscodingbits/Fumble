@@ -178,7 +178,7 @@ struct DropdownView: View {
         // Weak spots as plain chips — what to work on, without the wall of milliseconds.
         // The numbers still exist in the Stats pane for anyone who wants them.
         if !state.weakKeys.isEmpty || !state.weakBigrams.isEmpty {
-            section("Needs work", caption: "Costing you \(state.totalTimeCost) today · details in Stats") {
+            section("Needs work", caption: nil) {
                 chipRow(labels: state.weakKeys.prefix(5).map(\.label)
                         + state.weakBigrams.prefix(4).map { $0.label.replacingOccurrences(of: "Space", with: "␣") })
             }
