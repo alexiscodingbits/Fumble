@@ -22,6 +22,9 @@ struct StatsPaneView: View {
                     VirtualKeyboardView(focusKeyCode: nil, keyColor: { heatColor($0, speeds: speeds) })
                         .frame(maxWidth: .infinity)
 
+                    if let day {
+                        whereYouType(day)
+                    }
                     if let day, let analysis = WeakSpots.analyse(day) {
                         // Side by side and stripped to the one number that matters (time lost);
                         // the per-press latency lives in a tooltip. Two visible columns of
@@ -69,6 +72,28 @@ struct StatsPaneView: View {
                 }
                 // The per-press figure is detail, not headline — hover for it.
                 .help("Typically \(row.2)ms per press at your slower end")
+            }
+        }
+        .frame(maxWidth: 240, alignment: .leading)
+    }
+
+    /// Per-app breakdown — moved here from the dropdown: insight detail, not dashboard material.
+    private func whereYouType(_ day: DayStats) -> some View {
+        let total = Double(max(day.totalPresses, 1))
+        let apps = day.apps
+            .sorted { $0.value.presses > $1.value.presses }
+            .prefix(6)
+        return VStack(alignment: .leading, spacing: 3) {
+            Text("Where you type").font(.headline).padding(.bottom, 2)
+            ForEach(Array(apps), id: \.key) { bundleID, stat in
+                HStack {
+                    Text(bundleID.split(separator: ".").last.map(String.init) ?? bundleID)
+                        .font(.callout)
+                    Spacer(minLength: 16)
+                    Text("\(Int((Double(stat.presses) / total * 100).rounded()))%")
+                        .font(.callout.monospaced()).foregroundStyle(.secondary)
+                }
+                .help("\(stat.presses) keystrokes")
             }
         }
         .frame(maxWidth: 240, alignment: .leading)

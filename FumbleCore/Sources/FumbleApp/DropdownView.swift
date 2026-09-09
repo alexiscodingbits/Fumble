@@ -160,66 +160,47 @@ struct DropdownView: View {
 
     @ViewBuilder
     private var weakSpots: some View {
-        if !state.weakKeys.isEmpty {
-            section(
-                "Weak keys",
-                caption: "Slowest relative to your own \(state.baselineP95) baseline · costing \(state.totalTimeCost) today"
-            ) {
-                ForEach(state.weakKeys) { row in rowView(row) }
+        // The trend chart: the one "how am I doing" picture, replacing rows of timings.
+        if coordinator.wpmTrend.count >= 2 {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack {
+                    Text("Speed, last \(coordinator.wpmTrend.count) days").font(.caption.weight(.semibold))
+                    Spacer()
+                    if let latest = coordinator.wpmTrend.last {
+                        Text("\(Int(latest.rounded())) wpm").font(.caption2.monospaced()).foregroundStyle(.secondary)
+                    }
+                }
+                Sparkline(values: coordinator.wpmTrend)
+                    .frame(height: 36)
             }
         }
-        if !state.weakBigrams.isEmpty {
-            section("Weak transitions", caption: "Key pairs that cost you the most time") {
-                ForEach(state.weakBigrams) { row in rowView(row) }
+
+        // Weak spots as plain chips — what to work on, without the wall of milliseconds.
+        // The numbers still exist in the Stats pane for anyone who wants them.
+        if !state.weakKeys.isEmpty || !state.weakBigrams.isEmpty {
+            section("Needs work", caption: "Costing you \(state.totalTimeCost) today · details in Stats") {
+                chipRow(labels: state.weakKeys.prefix(6).map(\.label)
+                        + state.weakBigrams.prefix(4).map { $0.label.replacingOccurrences(of: "Space", with: "␣") })
             }
         }
-        if !state.topApps.isEmpty {
-            section("Where you type", caption: nil) {
-                ForEach(state.topApps) { app in
-                    HStack {
-                        Text(app.name).font(.caption)
-                        Spacer()
-                        Text(app.presses).font(.caption.monospaced()).foregroundStyle(.secondary)
-                        Text(Format.percentage(app.share))
-                            .font(.caption2.monospaced())
-                            .foregroundStyle(.tertiary)
-                            .frame(width: 34, alignment: .trailing)
+
+        // "Where you type" lives in the Stats pane now — insight detail, not dashboard material.
+    }
+
+    private func chipRow(labels: [String]) -> some View {
+        // Wrapping chip layout without a Layout dependency: chunk into rows of 6.
+        let rows = stride(from: 0, to: labels.count, by: 6).map { Array(labels[$0..<min($0 + 6, labels.count)]) }
+        return VStack(alignment: .leading, spacing: 4) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 5) {
+                    ForEach(row, id: \.self) { label in
+                        Text(label)
+                            .font(.caption.monospaced().weight(.medium))
+                            .padding(.horizontal, 7).padding(.vertical, 2)
+                            .background(Color.accentColor.opacity(0.12), in: Capsule())
                     }
                 }
             }
-        }
-    }
-
-    private func rowView(_ row: MenuViewState.Row) -> some View {
-        HStack(spacing: 6) {
-            Text(row.label)
-                .font(.system(.caption, design: .monospaced).weight(.semibold))
-                .frame(minWidth: 42, alignment: .leading)
-            if row.isSameFinger {
-                Image(systemName: "hand.raised")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    // Flagged rather than hidden: it explains the row without implying the
-                    // user should grind it away.
-                    .help("Same finger twice — inherently slow, not worth drilling")
-            }
-            Spacer()
-            if let correctionRate = row.correctionRate {
-                Text(correctionRate)
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(.secondary)
-                    .frame(width: 30, alignment: .trailing)
-                    .help("Backspaced after this key")
-            }
-            Text(row.excess)
-                .font(.caption2.monospaced())
-                .foregroundStyle(.orange)
-                .frame(width: 52, alignment: .trailing)
-                .help("Slower than your baseline, per press")
-            Text(row.timeCost)
-                .font(.caption2.monospaced())
-                .frame(width: 46, alignment: .trailing)
-                .help("Total time this cost you today")
         }
     }
 
