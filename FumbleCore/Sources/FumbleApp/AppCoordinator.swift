@@ -323,8 +323,8 @@ public final class AppCoordinator {
         refreshTrendIfStale()
     }
 
-    /// Daily WPM over the recent past, for the dropdown's sparkline. Oldest first, today last.
-    public private(set) var wpmTrend: [Double] = []
+    /// Daily WPM over the recent past, for the dropdown's trend chart. Oldest first, today last.
+    private(set) var wpmTrend: [TrendPoint] = []
     private var trendRefreshedAt: Date = .distantPast
 
     /// Recomputed at most once a minute — it reads every day file, and the 5s view refresh
@@ -333,7 +333,9 @@ public final class AppCoordinator {
         guard Date().timeIntervalSince(trendRefreshedAt) > 60 else { return }
         trendRefreshedAt = Date()
         flush()
-        wpmTrend = store.loadAll().suffix(14).compactMap { $0.wordsPerMinute() }
+        wpmTrend = store.loadAll().suffix(14).compactMap { day in
+            day.wordsPerMinute().map { TrendPoint(date: day.date, wpm: $0) }
+        }
     }
 
     /// The `DayStats` the aggregate view should reflect, per the selected timeframe.

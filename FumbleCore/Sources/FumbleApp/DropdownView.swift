@@ -164,14 +164,15 @@ struct DropdownView: View {
         if coordinator.wpmTrend.count >= 2 {
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
-                    Text("Speed, last \(coordinator.wpmTrend.count) days").font(.caption.weight(.semibold))
+                    Text("Speed").font(.caption.weight(.semibold))
                     Spacer()
                     if let latest = coordinator.wpmTrend.last {
-                        Text("\(Int(latest.rounded())) wpm").font(.caption2.monospaced()).foregroundStyle(.secondary)
+                        Text("today \(Int(latest.wpm.rounded())) wpm")
+                            .font(.caption2.monospaced()).foregroundStyle(.secondary)
                     }
                 }
-                Sparkline(values: coordinator.wpmTrend)
-                    .frame(height: 36)
+                TrendChart(points: coordinator.wpmTrend)
+                    .frame(height: 72)
             }
         }
 
