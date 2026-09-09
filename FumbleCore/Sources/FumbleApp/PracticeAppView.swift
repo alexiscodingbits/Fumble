@@ -51,6 +51,21 @@ struct PracticeAppView: View {
                 Label(pane.title, systemImage: pane.icon).tag(pane)
             }
             .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 220)
+            // Bottom-left of the app: the only ask in a free product.
+            .safeAreaInset(edge: .bottom) {
+                Button {
+                    NSWorkspace.shared.open(URL(string: "https://buymeacoffee.com/alexmcconnell")!)
+                } label: {
+                    Label("Buy me a coffee", systemImage: "cup.and.saucer.fill")
+                        .font(.caption)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .help("Fumble is free — this is the tip jar")
+            }
         } detail: {
             switch pane {
             case .practice: practicePane
