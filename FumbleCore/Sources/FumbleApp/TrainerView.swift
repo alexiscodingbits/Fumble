@@ -23,6 +23,9 @@ struct TrainerView: View {
     @State private var sessionStart: Double?
     /// Active typing time this lesson (idle-capped deltas) — daily-goal accounting.
     @State private var passageActiveSeconds: Double = 0
+    /// Active typing time across the whole session — the WPM denominator. Frozen while idle,
+    /// so the number doesn't decay by the second when you stop typing.
+    @State private var sessionActiveSeconds: Double = 0
     @State private var lastKeystrokeStamp: Double?
     @State private var completedChars = 0
 
@@ -34,7 +37,13 @@ struct TrainerView: View {
                 header
                 VirtualKeyboardView(focusKeyCode: trainer.focusKey?.keyCode, keyColor: keyColor)
                     .frame(maxWidth: .infinity)
+                // Legends, so the two colour encodings are readable without a manual.
+                Text("Keys: your relative speed (warmer = slower) · blue outline = the letter being practised")
+                    .font(.caption2).foregroundStyle(.tertiary)
                 confidenceBars
+                    .help("Each letter's progress toward your \(Int(coordinator.targetWPM)) wpm target — full bar unlocks the next letter")
+                Text("Bars: progress toward your \(Int(coordinator.targetWPM)) wpm target")
+                    .font(.caption2).foregroundStyle(.tertiary)
                 typingSurface
             }
             .padding(24)
@@ -47,33 +56,44 @@ struct TrainerView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .center) {
                 if let focus = trainer.focusKey {
-                    HStack(spacing: 8) {
-                        Text("Focus").font(.caption).foregroundStyle(.secondary)
+                    // Say what's happening in words — "Focus B · L index" reads as jargon to
+                    // anyone who didn't build the app.
+                    HStack(spacing: 10) {
                         Text(focus.label)
                             .font(.system(.title, design: .monospaced).weight(.bold))
                             .foregroundStyle(Color.accentColor)
-                        if let finger = focus.homeFinger {
-                            Text(finger.displayName).font(.caption).foregroundStyle(.secondary)
-                                .lineLimit(1).layoutPriority(-1)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Practising your slowest letter")
+                                .font(.caption.weight(.medium))
+                            if let finger = focus.homeFinger {
+                                Text("press it with your \(finger.longName)")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
                         }
+                        .lineLimit(1).layoutPriority(-1)
                     }
                 } else {
-                    Label("All letters mastered", systemImage: "checkmark.seal.fill")
-                        .font(.headline).foregroundStyle(.green)
+                    Label("All letters at target — raise the target speed in Settings to keep progressing",
+                          systemImage: "checkmark.seal.fill")
+                        .font(.subheadline).foregroundStyle(.green)
+                        .lineLimit(1)
                 }
                 Spacer()
                 stat(liveWPM.map { "\(Int($0.rounded()))" } ?? "—", "wpm")
+                    .help("Your speed this session, measured over active typing time")
                 stat("\(trainer.unlockedKeys.count)/26", "letters")
+                    .help("Letters unlocked so far — the rest unlock as you reach the target speed")
                 stat(String(format: "%.0f", coordinator.targetWPM), "target")
+                    .help("A letter is mastered at this speed (change it in Settings)")
             }
             // keybr's per-key feedback line: how the focus letter is actually progressing.
             if let focus = trainer.focusKey, let last = trainer.lastWPM(for: focus) {
                 HStack(spacing: 10) {
-                    Text("Last \(Int(last.rounded())) wpm")
+                    Text("last lesson \(Int(last.rounded())) wpm")
                     if let top = trainer.topWPM(for: focus) {
-                        Text("Top \(Int(top.rounded())) wpm")
+                        Text("best \(Int(top.rounded())) wpm")
                     }
                     if let rate = trainer.learningRate(for: focus) {
                         Text(String(format: "%@%.1f wpm/lesson", rate >= 0 ? "+" : "", rate))
@@ -154,20 +174,29 @@ struct TrainerView: View {
     // MARK: - Logic
 
     private var liveWPM: Double? {
-        guard let start = sessionStart else { return nil }
+        // Measured over ACTIVE typing time, which freezes when you stop — dividing by
+        // wall-clock made the number visibly decay ~1/second after finishing a lesson.
         let chars = completedChars + drill.cursor
-        guard chars >= 5 else { return nil }
-        let minutes = (now - start) / 60
-        guard minutes > 0 else { return nil }
-        return (Double(chars) / 5.0) / minutes
+        guard chars >= 5, sessionActiveSeconds > 1 else { return nil }
+        return (Double(chars) / 5.0) / (sessionActiveSeconds / 60)
     }
 
     private func keyColor(_ keyCode: Int) -> Color {
-        let key = KeyIdentity(keyCode: keyCode)
         guard trainer.unlockedKeys.contains(where: { $0.keyCode == keyCode }) else {
             return SkillColor.locked
         }
-        return SkillColor.color(trainer.confidence(for: key)).opacity(0.85)
+        // Coloured RELATIVE to your own spread, like the Stats heatmap — not progress-to-target.
+        // For a typist above target on everything, target-based colouring saturates the whole
+        // board uniform green and says nothing; relative colouring keeps the slowest letters
+        // visibly warmer, which is the thing worth seeing. (The bars below stay target-based —
+        // the two encodings answer different questions.)
+        let speeds = trainer.unlockedKeys.compactMap { trainer.wpm[$0.keyCode] }
+        guard let low = speeds.min(), let high = speeds.max(), high - low > 1 else {
+            // No meaningful spread (fresh start, or genuinely uniform): fall back to target-based.
+            return SkillColor.color(trainer.confidence(for: KeyIdentity(keyCode: keyCode))).opacity(0.85)
+        }
+        let wpm = trainer.wpm[keyCode] ?? low
+        return SkillColor.color((wpm - low) / (high - low)).opacity(0.85)
     }
 
     private func handle(_ press: KeyPress) -> KeyPress.Result {
@@ -183,6 +212,7 @@ struct TrainerView: View {
         if sessionStart == nil { sessionStart = stamp }
         if let last = lastKeystrokeStamp, stamp - last <= 5 {
             passageActiveSeconds += stamp - last
+            sessionActiveSeconds += stamp - last
         }
         lastKeystrokeStamp = stamp
         drill.type(character, at: stamp)
@@ -212,6 +242,7 @@ struct TrainerView: View {
 
     private func startSession() {
         sessionStart = nil
+        sessionActiveSeconds = 0
         completedChars = 0
         loadNextLesson()
         now = ProcessInfo.processInfo.systemUptime

@@ -60,6 +60,23 @@ public struct KeyIdentity: Hashable, Codable, Sendable, CustomStringConvertible 
             case .rightPinky: "R pinky"
             }
         }
+
+        /// Spelled out for user-facing sentences ("press it with your left index finger") —
+        /// the compact `displayName` reads as jargon to anyone who didn't build the app.
+        public var longName: String {
+            switch self {
+            case .leftPinky: "left pinky"
+            case .leftRing: "left ring finger"
+            case .leftMiddle: "left middle finger"
+            case .leftIndex: "left index finger"
+            case .leftThumb: "left thumb"
+            case .rightThumb: "right thumb"
+            case .rightIndex: "right index finger"
+            case .rightMiddle: "right middle finger"
+            case .rightRing: "right ring finger"
+            case .rightPinky: "right pinky"
+            }
+        }
     }
 
     // MARK: - Keycode tables

@@ -27,6 +27,9 @@ struct DrillView: View {
     /// Active typing time this passage: per-keystroke deltas, idle gaps excluded — so walking
     /// away mid-passage doesn't count as practice toward the daily goal.
     @State private var passageActiveSeconds: Double = 0
+    /// Active typing time across the session — the WPM denominator. Frozen while idle, so the
+    /// number doesn't decay by the second when you stop typing.
+    @State private var sessionActiveSeconds: Double = 0
     @State private var lastKeystrokeStamp: Double?
     @State private var completedChars = 0
     @State private var completedTyped = 0
@@ -145,14 +148,12 @@ struct DrillView: View {
 
     // MARK: - Session stats
 
-    /// WPM across the whole session, including the passage in progress.
+    /// WPM across the whole session, over ACTIVE typing time — which freezes when you stop,
+    /// so the figure doesn't decay by the second after a passage (wall-clock division did).
     private var sessionWPM: Double? {
-        guard let start = sessionStart else { return nil }
         let chars = completedChars + drill.cursor
-        guard chars >= 5 else { return nil }
-        let minutes = (now - start) / 60
-        guard minutes > 0 else { return nil }
-        return (Double(chars) / 5.0) / minutes
+        guard chars >= 5, sessionActiveSeconds > 1 else { return nil }
+        return (Double(chars) / 5.0) / (sessionActiveSeconds / 60)
     }
 
     private var sessionAccuracy: Double? {
@@ -182,6 +183,7 @@ struct DrillView: View {
         if sessionStart == nil { sessionStart = stamp }
         if let last = lastKeystrokeStamp, stamp - last <= 5 {
             passageActiveSeconds += stamp - last
+            sessionActiveSeconds += stamp - last
         }
         lastKeystrokeStamp = stamp
         drill.type(character, at: stamp)
@@ -216,6 +218,7 @@ struct DrillView: View {
 
     private func startSession() {
         sessionStart = nil
+        sessionActiveSeconds = 0
         completedChars = 0
         completedTyped = 0
         completedErrors = 0
