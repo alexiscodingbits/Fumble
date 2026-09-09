@@ -16,7 +16,7 @@ enum SoundMode: String, CaseIterable, Identifiable {
     var playsKeys: Bool { self == .keys || self == .all }
 }
 
-/// Plays practice feedback via the built-in system sounds — no bundled audio, nothing to license.
+/// Plays practice feedback: a bundled key-click sample (see Resources/) plus system sounds.
 ///
 /// Reliability matters more than it looks: a naive `NSSound(named:).play()` per keystroke
 /// allocates a fresh player each press and silently drops plays under fast typing (the instance

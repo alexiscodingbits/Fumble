@@ -68,7 +68,7 @@ struct PracticeAppView: View {
             }
         } detail: {
             switch pane {
-            case .practice: practicePane
+            case .practice: practicePane.id(coordinator.dataEpoch)
             case .stats: StatsPaneView(coordinator: coordinator)
             case .settings: SettingsPaneView(coordinator: coordinator)
             }

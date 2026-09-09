@@ -28,7 +28,12 @@ public final class AppCoordinator {
 
     /// The trainer's mastery target, in WPM. keybr's default is 35.
     public var targetWPM: Double {
-        didSet { UserDefaults.standard.set(targetWPM, forKey: Self.targetWPMKey) }
+        didSet {
+            UserDefaults.standard.set(targetWPM, forKey: Self.targetWPMKey)
+            // Settings promises this applies live; the cached trainer must hear about it or
+            // mastery/unlock keeps using the stale target until relaunch.
+            cachedTrainer?.updateTarget(wpm: targetWPM)
+        }
     }
     private static let targetWPMKey = "targetWPM"
 
@@ -146,11 +151,21 @@ public final class AppCoordinator {
             self.customPracticeText = (try? String(contentsOf: customTextFile, encoding: .utf8)) ?? ""
         }
 
-        let today = Calendar.current.startOfDay(for: Date())
-        // Resume today's file if the app was restarted mid-day, so a relaunch doesn't reset
-        // the numbers and make the app look like it lost the morning.
-        let existing = (try? store.load(today)) ?? nil
-        self.recorder = StatsRecorder(day: existing ?? DayStats(date: today))
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        // Resume today's data if the app was restarted mid-day, so a relaunch doesn't reset the
+        // numbers and make the app look like it lost the morning. Matching is by LOCAL calendar
+        // day of the embedded date — not filename or exact midnight equality — so a timezone
+        // change between sessions (travel) still resumes rather than silently overwriting the
+        // day's file with a fresh empty one. Duplicates from mixed-timezone history merge.
+        let todaysFiles = store.loadAll().filter { calendar.isDate($0.date, inSameDayAs: today) }
+        let existing: DayStats? = todaysFiles.isEmpty ? nil
+            : (todaysFiles.count == 1 ? todaysFiles[0] : DayStats.merging(todaysFiles, date: today))
+        self.recorder = StatsRecorder(day: existing.map { day in
+            var normalized = day
+            normalized.date = today   // re-anchor to the current zone's midnight
+            return normalized
+        } ?? DayStats(date: today))
 
         // Exclude our own practice window from capture: drill text is synthetic and aimed at
         // your weak keys, so counting it would corrupt the very model that generated it — and
@@ -247,6 +262,20 @@ public final class AppCoordinator {
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.recorder.breakSequence()
+                // Belt and braces: macOS sometimes disables taps across sleep without ever
+                // delivering tapDisabledByTimeout. Re-arming on wake is idempotent and free.
+                self?.tap?.reenable()
+            }
+        }
+
+        // An app switch is a typing discontinuity even when no key is pressed during it —
+        // Cmd-Tab by mouse, or clicking another window. Without this, the last key in app A and
+        // the first key in app B fabricate a bigram that was never typed.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] _ in
             MainActor.assumeIsolated { self?.recorder.breakSequence() }
         }
     }
@@ -295,13 +324,18 @@ public final class AppCoordinator {
         if value != liveWPM { liveWPM = value }
     }
 
-    /// Rolls over at local midnight. Checked on ingest rather than by timer so it can't be
-    /// missed while the machine is asleep.
+    /// Rolls over at local midnight. Checked on ingest AND on the refresh timer (so the menu
+    /// bar doesn't show yesterday as "today" until the first post-midnight keystroke).
+    ///
+    /// Same-day is judged with `isDate(_:inSameDayAs:)`, NOT exact midnight equality: two
+    /// midnights of the same local day in different timezones are different Dates, and exact
+    /// comparison made a mere timezone change trigger a spurious rollover that discarded the
+    /// day's in-memory stats and overwrote its file.
     private func rollDayIfNeeded() {
-        let today = Calendar.current.startOfDay(for: Date())
-        guard today != recorder.day.date else { return }
+        let calendar = Calendar.current
+        guard !calendar.isDate(Date(), inSameDayAs: recorder.day.date) else { return }
         flush()
-        recorder.startNewDay(today)
+        recorder.startNewDay(calendar.startOfDay(for: Date()))
         isDirty = false
     }
 
@@ -319,6 +353,7 @@ public final class AppCoordinator {
     }
 
     private func rebuildViewState() {
+        rollDayIfNeeded()   // timer-driven too, so midnight flips "Today" without a keystroke
         viewState = MenuViewState.build(day: aggregateForSelectedTimeframe(), hasPermission: hasPermission)
         refreshTrendIfStale()
     }
@@ -366,14 +401,21 @@ public final class AppCoordinator {
     // MARK: - Daily goal
 
     private static let practiceLogKey = "practicedSecondsByDay"
-    private static let dayKeyFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
+
+    /// Day keys from calendar components at call time — a cached formatter freezes its timezone
+    /// and mis-credits practice minutes after a zone change (same bug as the day files had).
+    private static func dayKey(for date: Date) -> String {
+        let parts = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+    }
+
+    private static func date(fromDayKey key: String) -> Date? {
+        let parts = key.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        var components = DateComponents()
+        components.year = parts[0]; components.month = parts[1]; components.day = parts[2]
+        return Calendar.current.date(from: components)
+    }
 
     /// Practice seconds per day, persisted as ["yyyy-MM-dd": seconds]. Small forever: one entry
     /// per practised day.
@@ -385,7 +427,7 @@ public final class AppCoordinator {
     /// Called by practice surfaces as time accrues (per completed passage).
     public func recordPracticeTime(seconds: Double) {
         guard seconds > 0, seconds.isFinite else { return }
-        let key = Self.dayKeyFormatter.string(from: Date())
+        let key = Self.dayKey(for: Date())
         var log = practiceLog
         log[key, default: 0] += seconds
         practiceLog = log
@@ -395,8 +437,12 @@ public final class AppCoordinator {
     /// Bumped on every practice-time write so SwiftUI re-reads the derived goal values.
     public private(set) var goalVersion = 0
 
+    /// Bumped by deleteAllData; practice surfaces re-key on it so in-flight drills reset rather
+    /// than folding pre-deletion samples back into a fresh trainer/practice log.
+    public private(set) var dataEpoch = 0
+
     public var todayPracticeSeconds: Double {
-        practiceLog[Self.dayKeyFormatter.string(from: Date())] ?? 0
+        practiceLog[Self.dayKey(for: Date())] ?? 0
     }
 
     /// 0…1 toward today's goal; nil when the goal is off.
@@ -409,7 +455,7 @@ public final class AppCoordinator {
         let calendar = Calendar.current
         var byDay: [Date: Double] = [:]
         for (key, seconds) in practiceLog {
-            if let date = Self.dayKeyFormatter.date(from: key) {
+            if let date = Self.date(fromDayKey: key) {
                 byDay[calendar.startOfDay(for: date)] = seconds
             }
         }
@@ -532,8 +578,19 @@ public final class AppCoordinator {
         return DayStats.merging(all, date: recorder.day.date)
     }
 
-    /// The richest merged day, exposed for the stats pane (heatmap, weak-spot tables).
-    public func statsSnapshot() -> DayStats? { richestDay() }
+    /// The richest merged day, exposed for the stats pane (heatmap, weak-spot tables). Cached
+    /// for 30s: SwiftUI re-evaluates the pane's body on every observed change (each keystroke
+    /// while it's visible), and recomputing meant a disk flush plus a full-history decode per
+    /// keystroke on the main thread.
+    public func statsSnapshot() -> DayStats? {
+        if let cachedStats, Date().timeIntervalSince(statsCachedAt) < 30 { return cachedStats }
+        let fresh = richestDay()
+        cachedStats = fresh
+        statsCachedAt = Date()
+        return fresh
+    }
+    private var cachedStats: DayStats?
+    private var statsCachedAt: Date = .distantPast
 
     // MARK: - Data controls
 
@@ -541,8 +598,11 @@ public final class AppCoordinator {
     public var bytesOnDisk: UInt64 { store.totalBytesOnDisk }
 
     public func revealDataInFinder() {
+        // The parent Fumble directory, not days/: trainer.json and custom-text.txt live beside
+        // the day files, and an audit affordance that hides data would undercut its own point.
+        let root = store.directory.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: store.directory, withIntermediateDirectories: true)
-        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: store.directory.path)
+        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: root.path)
     }
 
     /// Deletes EVERYTHING Fumble knows: day files, the trainer snapshot, the custom practice
@@ -555,6 +615,9 @@ public final class AppCoordinator {
         customPracticeText = ""
         UserDefaults.standard.removeObject(forKey: Self.practiceLogKey)
         cachedTrainer = nil
+        cachedStats = nil
+        statsCachedAt = .distantPast
+        dataEpoch += 1   // practice views re-key on this, so an in-flight drill can't resurrect data
         goalVersion += 1
         recorder.startNewDay(Calendar.current.startOfDay(for: Date()))
         isDirty = false

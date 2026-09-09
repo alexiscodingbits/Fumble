@@ -82,8 +82,10 @@ excluded". The number should be auditable, not magic.
 ## Privacy
 
 Fumble records **which key and when** — never the characters. What lands on disk is counters and
-latency histograms with no ordering, so `cat` and `act` produce byte-identical files. Nothing is
-recorded while a password field has focus. There is no network code, no account, no telemetry.
+latency histograms: no keystroke sequence exists to replay your text. (Per-key-pair counters do
+retain adjacent-pair frequencies — that residue is deliberately disclosed and bounded; see
+PRIVACY.md.) Nothing is recorded while a password field has focus. There is no network code, no
+account, no telemetry.
 
 The full account, including the part that *is* a residual risk and what's done about it, is in
 **[PRIVACY.md](PRIVACY.md)** — along with the commands to verify all of it yourself.

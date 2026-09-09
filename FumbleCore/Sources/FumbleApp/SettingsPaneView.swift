@@ -4,6 +4,7 @@ import SwiftUI
 /// Trainer, practice-feel, goal, and data settings.
 struct SettingsPaneView: View {
     let coordinator: AppCoordinator
+    @State private var confirmingDelete = false
 
     private var targetWPM: Binding<Double> {
         Binding(get: { coordinator.targetWPM }, set: { coordinator.targetWPM = $0 })
@@ -98,7 +99,15 @@ struct SettingsPaneView: View {
 
             Section("Data") {
                 Button("Show data in Finder") { coordinator.revealDataInFinder() }
-                Button("Delete all data", role: .destructive) { coordinator.deleteAllData() }
+                Button(confirmingDelete ? "Really delete everything?" : "Delete all data",
+                       role: .destructive) {
+                    if confirmingDelete {
+                        coordinator.deleteAllData()
+                        confirmingDelete = false
+                    } else {
+                        confirmingDelete = true   // single-click total erasure needs a second look
+                    }
+                }
                 Text("\(bytesString) on disk · local only, no account, no network. Fumble records which keys and when, never the characters you type. Typing inside Fumble's own practice window is excluded from your daily stats.")
                     .font(.caption).foregroundStyle(.secondary)
             }

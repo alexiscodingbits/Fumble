@@ -3,6 +3,10 @@ name: Release
 # Cuts a notarized DMG when a v* tag is pushed. Notarization activates only when the APPLE_*
 # secrets are present; without them the job still builds and uploads an (unnotarized) DMG so the
 # pipeline is testable before the Developer ID is set up.
+#
+# NOTE: the `secrets` context is NOT available in step-level `if:` expressions — gating steps on
+# `secrets.X != ''` silently skips them even when the secret exists. The supported pattern is to
+# map secrets into job-level env and gate on `env.*`.
 on:
   push:
     tags: ["v*"]
@@ -11,22 +15,32 @@ on:
 permissions:
   contents: write
 
+env:
+  HAS_SIGNING: ${{ secrets.DEVELOPER_ID_P12 != '' }}
+  HAS_NOTARY: ${{ secrets.AC_API_KEY_ID != '' }}
+
 jobs:
   release:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.app || true
+      # No Xcode pin: the runner default is the newest stable, which is what local dev uses.
+      # Pinning to the oldest Swift 6 toolchain (16.0) broke on newer language features.
 
       - name: Run tests
         run: |
           cd FumbleCore
           swift test
 
+      - name: Derive version from tag
+        # The repo VERSION file tracks dev ("1.0.0-dev"); a tagged release names its artifacts
+        # from the tag so v1.0.0 ships Fumble-1.0.0.dmg and matches the Homebrew cask URL.
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: echo "${GITHUB_REF_NAME#v}" > VERSION
+
       - name: Import Developer ID certificate
-        if: ${{ secrets.DEVELOPER_ID_P12 != '' }}
+        if: env.HAS_SIGNING == 'true'
         env:
           DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
           DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
@@ -36,36 +50,61 @@ jobs:
           security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
           security default-keychain -s build.keychain
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          # Disable the 300s auto-lock: a full universal build takes longer, and codesign
+          # against a locked keychain fails mid-release.
+          security set-keychain-settings -lut 21600 build.keychain
           security import /tmp/cert.p12 -k build.keychain -P "$DEVELOPER_ID_P12_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
           rm -f /tmp/cert.p12
 
-      - name: Build DMG
+      - name: Build app
         env:
-          # When the cert is present, sign with the real Developer ID; otherwise bundle-app.sh
-          # falls back (ad-hoc) and the DMG is unnotarized.
           CODESIGN_IDENTITY: ${{ secrets.DEVELOPER_ID_NAME }}
-        run: bash scripts/make-dmg.sh
+        run: bash scripts/bundle-app.sh
 
-      - name: Notarize and staple
-        if: ${{ secrets.AC_API_KEY_ID != '' }}
+      - name: Notarize and staple the app, then build + notarize + staple the DMG
+        if: env.HAS_NOTARY == 'true'
         env:
           AC_API_KEY_ID: ${{ secrets.AC_API_KEY_ID }}
           AC_API_ISSUER_ID: ${{ secrets.AC_API_ISSUER_ID }}
           AC_API_KEY: ${{ secrets.AC_API_KEY }}
+          CODESIGN_IDENTITY: ${{ secrets.DEVELOPER_ID_NAME }}
         run: |
           echo "$AC_API_KEY" > /tmp/ac_key.p8
+          # 1) Notarize the app itself and staple it, so the copy users drag out of the DMG
+          #    carries its own ticket (offline first launch works). Notarizing only the DMG
+          #    leaves the inner app ticketless.
+          ditto -c -k --keepParent dist/Fumble.app /tmp/Fumble.zip
+          xcrun notarytool submit /tmp/Fumble.zip \
+            --key /tmp/ac_key.p8 --key-id "$AC_API_KEY_ID" --issuer "$AC_API_ISSUER_ID" --wait
+          xcrun stapler staple dist/Fumble.app
+          # 2) Package the stapled app into the DMG (skip the rebuild, which would strip the
+          #    ticket), then notarize + staple the DMG too.
+          SKIP_BUNDLE=1 bash scripts/make-dmg.sh
           DMG=$(ls dist/Fumble-*.dmg | head -1)
           xcrun notarytool submit "$DMG" \
-            --key /tmp/ac_key.p8 \
-            --key-id "$AC_API_KEY_ID" \
-            --issuer "$AC_API_ISSUER_ID" \
-            --wait
+            --key /tmp/ac_key.p8 --key-id "$AC_API_KEY_ID" --issuer "$AC_API_ISSUER_ID" --wait
           xcrun stapler staple "$DMG"
           rm -f /tmp/ac_key.p8
 
+      - name: Build DMG (unnotarized fallback)
+        if: env.HAS_NOTARY != 'true'
+        env:
+          CODESIGN_IDENTITY: ${{ secrets.DEVELOPER_ID_NAME }}
+        run: SKIP_BUNDLE=1 bash scripts/make-dmg.sh
+
       - name: Publish release
+        # Only tags publish; a workflow_dispatch run is a pipeline test and has no tag to
+        # attach a release to (the old unconditional publish step made dispatch runs fail).
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: dist/Fumble-*.dmg
           generate_release_notes: true
+
+      - name: Upload DMG artifact (dispatch runs)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Fumble-dmg
+          path: dist/Fumble-*.dmg

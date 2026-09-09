@@ -85,7 +85,7 @@ struct StatsStoreTests {
         // Hand-write a v1-shaped file: per-key latency present, but no motorLatency or
         // motorClassification. This is exactly what broke when the schema changed.
         let date = Calendar.current.startOfDay(for: Date())
-        let stamp = StatsStore.filenameFormatter.string(from: date)
+        let stamp = StatsStore.filenameStamp(for: date)
         let epoch = date.timeIntervalSinceReferenceDate
         let legacy = """
         {"schemaVersion":1,"date":\(epoch),"totalPresses":300,"totalCorrections":5,

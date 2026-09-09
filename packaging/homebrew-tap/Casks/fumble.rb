@@ -26,5 +26,6 @@ cask "fumble" do
 
   zap trash: [
     "~/Library/Application Support/Fumble",
+    "~/Library/Preferences/com.alexiscodingbits.fumble.plist",
   ]
 end

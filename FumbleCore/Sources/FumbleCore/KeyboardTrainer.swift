@@ -162,6 +162,12 @@ public final class KeyboardTrainer {
         history[keyCode] = entry
     }
 
+    /// Apply a new target speed live. Confidence, focus, and mastery all derive from config, so
+    /// a settings change must reach the running trainer — not wait for a relaunch.
+    public func updateTarget(wpm: Double) {
+        config.targetWPM = wpm
+    }
+
     /// Manually unlock the next letter (a "skip / add a letter" control), if any remain.
     @discardableResult
     public func unlockNext() -> Bool {

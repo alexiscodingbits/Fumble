@@ -127,6 +127,12 @@ public final class EventTap {
     /// record that it happened.
     fileprivate func handleTapDisabled() {
         wasDisabledByTimeout = true
+        reenable()
+    }
+
+    /// Re-arm the tap. Idempotent; called on wake because macOS sometimes disables taps across
+    /// sleep without delivering a tapDisabled event.
+    func reenable() {
         if let machPort {
             CGEvent.tapEnable(tap: machPort, enable: true)
         }

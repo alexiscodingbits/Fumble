@@ -5,15 +5,25 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
 
-bash scripts/bundle-app.sh
+# SKIP_BUNDLE=1 packages the existing dist/Fumble.app (used by the release workflow after
+# stapling the app — a rebuild would strip the notarization ticket).
+[ "${SKIP_BUNDLE:-}" = "1" ] || bash scripts/bundle-app.sh
 
 VERSION="$(tr -d '[:space:]' < VERSION 2>/dev/null || echo 1.0.0)"
 [ -n "$VERSION" ] || VERSION="1.0.0"
+# Identity resolution MUST match bundle-app.sh (Developer ID > Fumble Local > ad-hoc), or the
+# DMG signature mismatches the app inside it.
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-}"
-if [ -z "$CODESIGN_IDENTITY" ] && security find-identity -p codesigning 2>/dev/null | grep -q "Fumble Local"; then
-  CODESIGN_IDENTITY="Fumble Local"
+if [ -z "$CODESIGN_IDENTITY" ]; then
+  DEVID=$(security find-identity -v -p codesigning 2>/dev/null | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)".*/\1/')
+  if [ -n "$DEVID" ]; then
+    CODESIGN_IDENTITY="$DEVID"
+  elif security find-identity -p codesigning 2>/dev/null | grep -q "Fumble Local"; then
+    CODESIGN_IDENTITY="Fumble Local"
+  else
+    CODESIGN_IDENTITY="-"
+  fi
 fi
-[ -n "$CODESIGN_IDENTITY" ] || CODESIGN_IDENTITY="-"
 
 DMG="dist/Fumble-${VERSION}.dmg"
 # Stage in a non-synced temp dir (iCloud re-taints ~/Documents bundles; see bundle-app.sh).

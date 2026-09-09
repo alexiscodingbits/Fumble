@@ -38,17 +38,17 @@ public struct StatsStore: Sendable {
 
     // MARK: - Filenames
 
-    static let filenameFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
+    /// Filename stamp derived from calendar components AT CALL TIME. Deliberately not a cached
+    /// DateFormatter: a formatter freezes its timezone when created, and after a system timezone
+    /// change (travel) a frozen formatter names the new day's file after the *previous* local
+    /// day — silently replacing a full day of stats. Calendar.current tracks zone changes.
+    static func filenameStamp(for date: Date) -> String {
+        let parts = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+    }
 
     public func url(for date: Date) -> URL {
-        directory.appendingPathComponent("\(Self.filenameFormatter.string(from: date)).json")
+        directory.appendingPathComponent("\(Self.filenameStamp(for: date)).json")
     }
 
     // MARK: - Read / write

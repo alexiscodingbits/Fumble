@@ -25,8 +25,10 @@ identifiers like `com.apple.Terminal`).
 - **No characters.** Fumble stores the *keycode* of the physical key, never the character it
   produced. Resolving keycode → character would require reading your keyboard layout and
   modifier state — that is, reconstructing your text. Fumble does not do it.
-- **No sequence.** Counters have no order. Typing `cat` and typing `act` produce byte-identical
-  key counters. There is no buffer of recent keystrokes, nothing queued, nothing to flush.
+- **No sequence.** No ordered stream of keystrokes is ever stored — there is no buffer of recent
+  keystrokes, nothing queued, nothing to flush. Per-KEY counters are order-free (typing `cat`
+  and `act` updates them identically); per-PAIR counters do record which keys were adjacent,
+  which is the bounded n-gram residue described honestly below.
 - **No passwords.** While a secure input field has focus, keystrokes are discarded before
   anything is counted. macOS tells us when this is the case (`IsSecureEventInputEnabled`).
 - **No network.** Fumble makes no network requests. There is no account, no sync, no telemetry,
@@ -81,11 +83,11 @@ your weak keys — letting it into the day would corrupt the very model that gen
 Don't take the above on trust:
 
 ```sh
-# Print everything stored for today, exactly as it exists on disk.
-fumble-cli --json
-
-# Or just read the file.
+# Read today's stored data — it's a plain JSON file of counters.
 cat ~/Library/Application\ Support/Fumble/days/$(date +%F).json
+
+# Building from source? The bundled CLI prints it summarised or verbatim:
+#   cd FumbleCore && swift run fumble-cli --json
 ```
 
 You will find counters and histograms. You will not find your text — because it was never

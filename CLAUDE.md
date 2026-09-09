@@ -18,16 +18,22 @@ particularly `Pulse teardown.md` (the competitor) and `Product plan — v1 and v
 
 ## Status
 
-**M1 complete.** 57 tests green, 0 build warnings, universal binary, ad-hoc signed, running.
+**Feature-complete, pre-release.** 185 tests green, 0 build warnings, universal binary,
+Developer ID signed (notarization verified end-to-end once; release workflow automates it).
 
-- ✅ **M1** — CGEvent tap, provenance filtering, latency histograms, per-key/bigram/app stats,
-  JSON-per-day persistence, weak-spot ranking, menu-bar dropdown.
+- ✅ **M1** — CGEvent tap, provenance filtering, latency histograms (adaptive per-transition
+  motor filter), per-key/bigram/app stats, JSON-per-day persistence, weak-spot ranking.
+- ✅ **M3** — dropdown dashboard (live WPM, Swift Charts trend, needs-work chips), Stats pane
+  (relative-speed heatmap, weak keys, per-app), timeframes.
+- ✅ **M4** — adaptive trainer (keybr loop seeded from real capture, persisted to trainer.json),
+  five practice modes (trainer / weak spots / custom text / numbers / code), typing assists,
+  sounds (bundled key-click sample), appearance modes, daily goal + streaks.
+- ✅ **M5 (partial)** — Developer ID + notarization chain proven; release.yml builds, notarizes
+  (app stapled first, then DMG), publishes on v* tags. Homebrew cask scaffolded.
 - ⏳ **M2** — validate the injected-keystroke filter against real automation (Keyboard Maestro,
-  Hammerspoon, `osascript`, text expanders, Copilot). **The schedule risk.** The mechanism is
-  written and unit-tested against synthetic input, but never verified against real tools.
-- ⏳ **M3** — keyboard heatmap, history/trends beyond today.
-- ⏳ **M4** — drill generation from weak spots. This is where it stops being a tracker.
-- ⏳ **M5** — Developer ID + notarization, Homebrew cask, Sparkle updater.
+  Hammerspoon, `osascript`, text expanders, Copilot). Written + unit-tested, never field-tested.
+- ⏳ Release chores: real VERSION/tag, README screenshots, repo public, patent search,
+  key-click sample licensing (Epidemic Sound — owner decision).
 - ⏳ **v2** — word/token-level coaching, corpus derived **from disk** (repos + shell history),
   ranked with tap timing. Decided: the tap must never see words.
 
