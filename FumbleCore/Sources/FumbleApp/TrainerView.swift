@@ -37,12 +37,7 @@ struct TrainerView: View {
                 header
                 VirtualKeyboardView(focusKeyCode: trainer.focusKey?.keyCode, keyColor: keyColor)
                     .frame(maxWidth: .infinity)
-                // Legends, so the two colour encodings are readable without a manual.
-                Text("Keys: your relative speed (warmer = slower) · blue outline = the letter being practised")
-                    .font(.caption2).foregroundStyle(.tertiary)
-                confidenceBars
-                    .help("Each letter's progress toward your \(Int(coordinator.targetWPM)) wpm target — full bar unlocks the next letter")
-                Text("Bars: progress toward your \(Int(coordinator.targetWPM)) wpm target")
+                Text("Keys: your relative speed (warmer = slower) · grey = locked · blue outline = being practised")
                     .font(.caption2).foregroundStyle(.tertiary)
                 typingSurface
             }
@@ -112,29 +107,6 @@ struct TrainerView: View {
             Text(label).font(.caption).foregroundStyle(.secondary)
         }
         .padding(.leading, 12)
-    }
-
-    // MARK: - Confidence bars
-
-    private var confidenceBars: some View {
-        // Bars share the available width so the row never overflows, however many letters are
-        // unlocked (it grows to all 26).
-        HStack(alignment: .bottom, spacing: 4) {
-            ForEach(trainer.unlockedKeys, id: \.keyCode) { key in
-                let confidence = trainer.confidence(for: key)
-                VStack(spacing: 3) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(SkillColor.color(confidence))
-                        .frame(height: 6 + 40 * confidence)
-                    Text(key.label)
-                        .font(.system(size: 11, weight: key == trainer.focusKey ? .bold : .regular,
-                                      design: .monospaced))
-                        .foregroundStyle(key == trainer.focusKey ? Color.accentColor : .secondary)
-                }
-                .frame(maxWidth: .infinity)
-            }
-        }
-        .frame(height: 64, alignment: .bottom)
     }
 
     // MARK: - Typing surface
