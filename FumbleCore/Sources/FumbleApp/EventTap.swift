@@ -26,6 +26,9 @@ public final class EventTap {
     public private(set) var isRunning = false
     /// Set when the OS disables our tap (see `tapDisabled`), so the UI can explain the gap.
     public private(set) var wasDisabledByTimeout = false
+    /// Called when the OS disabled (and we re-armed) the tap: keystrokes were lost in between,
+    /// so the owner must break the recorder's sequence or the gap fabricates a bigram/latency.
+    var onDisabled: (() -> Void)?
 
     public init(handler: @escaping Handler) {
         self.handler = handler
@@ -59,7 +62,6 @@ public final class EventTap {
         guard Self.hasPermission else { return false }
 
         frontmostBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-        observeAppActivation()
 
         // flagsChanged is included so modifier presses break the typing sequence rather than
         // being invisible — otherwise Shift between two letters looks like a direct bigram.
@@ -84,6 +86,10 @@ public final class EventTap {
         machPort = port
         runLoopSource = source
         isRunning = true
+        // Registered only once the tap is definitely live: registering before tapCreate leaked
+        // one workspace observer per failed start attempt (the permission watcher retries
+        // every 2 seconds, so a denied launch accumulated observers indefinitely).
+        observeAppActivation()
         return true
     }
 
@@ -128,6 +134,7 @@ public final class EventTap {
     fileprivate func handleTapDisabled() {
         wasDisabledByTimeout = true
         reenable()
+        onDisabled?()
     }
 
     /// Re-arm the tap. Idempotent; called on wake because macOS sometimes disables taps across

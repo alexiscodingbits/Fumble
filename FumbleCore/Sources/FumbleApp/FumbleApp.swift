@@ -4,7 +4,7 @@ import SwiftUI
 
 @main
 struct FumbleApp: App {
-    @State private var coordinator = AppCoordinator()
+    @State private var coordinator = AppCoordinator.shared
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
@@ -44,9 +44,18 @@ struct FumbleApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor var coordinator: AppCoordinator?
 
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        MainActor.assumeIsolated {
+            // Fallback start: normally the menu-bar label's onAppear starts capture, but a
+            // crowded menu bar can keep the item (and its onAppear) from ever appearing.
+            // start() is idempotent, so both paths firing is fine.
+            AppCoordinator.shared.start()
+        }
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         MainActor.assumeIsolated {
-            coordinator?.shutDown()
+            (coordinator ?? AppCoordinator.shared).shutDown()
         }
     }
 }

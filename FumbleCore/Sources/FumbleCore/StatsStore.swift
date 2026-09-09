@@ -66,12 +66,32 @@ public struct StatsStore: Sendable {
 
     /// Writes atomically. The app flushes every 30 seconds and on quit, so a crash
     /// mid-write is a realistic event; a truncated day file would lose the whole day.
+    ///
+    /// Collision safety: file identity is a local calendar-date STRING computed at save time,
+    /// but day identity is the embedded midnight instant — and after a westward timezone change
+    /// those disagree (London Sep 9 midnight is NY Sep 8 evening, so a fresh NY Sep 9 day
+    /// stamps to the same "2026-09-09.json" that holds the London morning). Blind replacement
+    /// silently destroyed that data. If the target file holds a *different* day than the one
+    /// being saved, merge it in rather than overwrite; the ordinary flush cycle (same embedded
+    /// date — an older snapshot of the very day we hold) still replaces.
     public func save(_ day: DayStats) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let target = url(for: day.date)
+
+        var toWrite = day
+        if FileManager.default.fileExists(atPath: target.path),
+           let existingData = try? Data(contentsOf: target),
+           let existing = try? JSONDecoder().decode(DayStats.self, from: existingData),
+           existing.schemaVersion <= DayStats.currentSchemaVersion,
+           existing.date != day.date {
+            // Foreign day under our filename: absorb it. `day.merged(with:)` keeps our date, so
+            // the merged file stays consistent with its stamp in the current zone.
+            toWrite = day.merged(with: existing)
+        }
+
         let encoder = JSONEncoder()
         encoder.outputFormatting = []
-        let data = try encoder.encode(day)
-        let target = url(for: day.date)
+        let data = try encoder.encode(toWrite)
         let temporary = directory.appendingPathComponent(".\(UUID().uuidString).tmp")
         try data.write(to: temporary, options: .atomic)
         _ = try FileManager.default.replaceItemAt(target, withItemAt: temporary)

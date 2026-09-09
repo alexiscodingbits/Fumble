@@ -167,7 +167,11 @@ struct DropdownView: View {
                     Text("Speed").font(.caption.weight(.semibold))
                     Spacer()
                     if let latest = coordinator.wpmTrend.last {
-                        Text("today \(Int(latest.wpm.rounded())) wpm")
+                        // Today drops out of the trend until it has enough active typing, so
+                        // the latest point isn't necessarily today — don't mislabel it.
+                        Text(Calendar.current.isDateInToday(latest.date)
+                             ? "today \(Int(latest.wpm.rounded())) wpm"
+                             : "\(Int(latest.wpm.rounded())) wpm")
                             .font(.caption2.monospaced()).foregroundStyle(.secondary)
                     }
                 }

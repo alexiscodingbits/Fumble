@@ -40,6 +40,39 @@ struct StatsStoreTests {
         #expect(try store.load(Date(timeIntervalSince1970: 0)) == nil)
     }
 
+    @Test("a filename collision between two DIFFERENT days merges instead of destroying")
+    func collisionMergesForeignDay() throws {
+        // The westward-travel scenario: a file written under one zone's midnight instant shares
+        // a local-date filename with a fresh day anchored at the new zone's midnight. Simulated
+        // here with two instants on the same local day (midnight and 01:00), which stamp to the
+        // same filename but are different embedded dates.
+        let store = makeTemporaryStore()
+        defer { cleanUp(store) }
+
+        let midnight = Calendar.current.startOfDay(for: Date())
+        var foreign = DayStats(date: midnight.addingTimeInterval(3_600))
+        foreign.totalPresses = 1_000
+        foreign.activeSeconds = 100
+        try store.save(foreign)
+
+        var fresh = DayStats(date: midnight)
+        fresh.totalPresses = 50
+        fresh.activeSeconds = 10
+        try store.save(fresh)   // same filename, different embedded date
+
+        let onDisk = try #require(try store.load(midnight))
+        #expect(onDisk.totalPresses == 1_050)          // both survive
+        #expect(onDisk.activeSeconds == 110)
+        #expect(onDisk.date == midnight)               // stamp-consistent date wins
+
+        // And the ordinary flush cycle still replaces rather than double-counting: saving a
+        // newer snapshot of the SAME day must not merge with its own older snapshot.
+        var snapshot = onDisk
+        snapshot.totalPresses = 2_000
+        try store.save(snapshot)
+        #expect(try store.load(midnight)?.totalPresses == 2_000)
+    }
+
     @Test("save overwrites the same day rather than accumulating files")
     func overwrite() throws {
         let store = makeTemporaryStore()

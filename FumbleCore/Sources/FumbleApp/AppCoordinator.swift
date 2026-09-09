@@ -10,6 +10,11 @@ import Observation
 @Observable
 public final class AppCoordinator {
 
+    /// The app's single coordinator. A shared instance (rather than view-owned state) lets the
+    /// app delegate start capture at launch even if the menu-bar label's onAppear never fires
+    /// (crowded menu bars on notched MacBooks can keep the item off-screen).
+    public static let shared = AppCoordinator()
+
     public private(set) var viewState: MenuViewState
     public private(set) var hasPermission: Bool
     public private(set) var tapFailedToStart = false
@@ -228,6 +233,11 @@ public final class AppCoordinator {
 
         let tap = EventTap { [weak self] event in
             self?.ingest(event)
+        }
+        tap.onDisabled = { [weak self] in
+            // The OS disabled the tap and we re-armed it; whatever was typed in the gap is
+            // lost, so the pair spanning it must not become a bigram.
+            self?.recorder.breakSequence()
         }
         if tap.start() {
             self.tap = tap
@@ -519,7 +529,7 @@ public final class AppCoordinator {
     /// The one trainer instance for this session. Living here (not in view @State) means pane
     /// and mode switches can't wipe lesson progress, and the expensive seed computation runs
     /// once instead of on every parent re-render.
-    private var cachedTrainer: KeyboardTrainer?
+    @ObservationIgnored private var cachedTrainer: KeyboardTrainer?
 
     /// URL for the persisted trainer snapshot — alongside the day files, so "show data" and
     /// "delete all" naturally cover it.
@@ -589,8 +599,11 @@ public final class AppCoordinator {
         statsCachedAt = Date()
         return fresh
     }
-    private var cachedStats: DayStats?
-    private var statsCachedAt: Date = .distantPast
+    // @ObservationIgnored: these are memoization caches written while SwiftUI evaluates a view
+    // body (trainer()/statsSnapshot() are called from body) — tracking them would be
+    // modify-during-update. Consumers get change signals from the underlying data instead.
+    @ObservationIgnored private var cachedStats: DayStats?
+    @ObservationIgnored private var statsCachedAt: Date = .distantPast
 
     // MARK: - Data controls
 
