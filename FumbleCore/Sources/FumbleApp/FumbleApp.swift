@@ -33,7 +33,10 @@ struct FumbleApp: App {
         Window("Fumble", id: Self.practiceWindowID) {
             PracticeAppView(coordinator: coordinator)
         }
-        .windowResizability(.contentMinSize)
+        // .contentSize with a fixed content frame makes min == max: the window cannot be
+        // resized at all. (The previous .contentMinSize treated 860x620 as merely a floor,
+        // so users could stretch the window into dead space the fixed layout never fills.)
+        .windowResizability(.contentSize)
     }
 
     static let practiceWindowID = "practice"
