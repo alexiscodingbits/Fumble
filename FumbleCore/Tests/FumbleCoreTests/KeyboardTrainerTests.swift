@@ -152,7 +152,7 @@ struct TrainerLessonGeneratorTests {
          "toilet", "tinsel", "insole", "salient", "athlete", "hotline"]
     }
 
-    @Test("a rich focus pool yields all natural words, about half containing the focus")
+    @Test("a rich focus pool yields all natural words, nearly all containing the focus")
     func naturalWordsFullBlend() {
         let unlocked = keys("etaoinsrhl")
         let focus = KeyIdentity(keyCode: code("r"))
@@ -165,8 +165,11 @@ struct TrainerLessonGeneratorTests {
         let pool = Set(rWords + plainWords)
         #expect(words.count == 200)
         #expect(words.allSatisfy { pool.contains($0) })   // 16 focus words >= 10: no pseudo-words
+        // keybr-style: a lesson for R should be r-words nearly wall to wall (~90% draw), with
+        // the occasional plain word for variety. Guards the user-reported regression where a
+        // 50/50 draw made B-lessons read as mostly b-less words.
         let focusShare = Double(words.filter { $0.contains("r") }.count) / Double(words.count)
-        #expect(focusShare > 0.35 && focusShare < 0.65)
+        #expect(focusShare > 0.8)
     }
 
     @Test("a thin focus pool blends natural and pseudo-words rather than cliffing")
