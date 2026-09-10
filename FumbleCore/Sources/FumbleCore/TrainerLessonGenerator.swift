@@ -84,9 +84,10 @@ public enum TrainerLessonGenerator {
         return words.joined(separator: " ")
     }
 
-    /// Pick one real word. With a focus letter, roughly half the picks come from the
-    /// focus-containing pool so the weak letter stays featured; the rest come from the general
-    /// pool so the lesson still reads like language rather than a q-word litany.
+    /// Pick one real word — almost always from the focus-containing pool, like keybr: a lesson
+    /// for B should be b-words nearly wall to wall. The occasional (~10%) plain word keeps a
+    /// touch of variety, and thin pools are already handled upstream (naturalShare blends in
+    /// pseudo-words as the focus pool shrinks), so rare letters don't degenerate into a litany.
     private static func naturalWord<R: RandomNumberGenerator>(
         focusPool: [String],
         plainPool: [String],
@@ -94,7 +95,7 @@ public enum TrainerLessonGenerator {
         using rng: inout R
     ) -> String {
         let wantFocus = !focusPool.isEmpty
-            && (plainPool.isEmpty || Double.random(in: 0..<1, using: &rng) < 0.5)
+            && (plainPool.isEmpty || Double.random(in: 0..<1, using: &rng) < 0.9)
         let pool = wantFocus ? focusPool : plainPool
         guard var word = pool.randomElement(using: &rng) else { return "" }
         // One redraw avoids most immediate repeats without stalling on thin pools.
