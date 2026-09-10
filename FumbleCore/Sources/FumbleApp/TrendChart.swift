@@ -45,6 +45,9 @@ struct TrendChart: View {
         // A y-domain snug around the data (not zero-based): day-to-day movement is the story,
         // and a 0–85 axis would flatten a 70→80 improvement into an invisible wiggle.
         .chartYScale(domain: yDomain)
+        // Clip marks to the plot rectangle: the smoothed curve (and its area fill) can overshoot
+        // the domain floor, and unclipped it bleeds over the axis labels and the content below.
+        .chartPlotStyle { $0.clipped() }
         .chartYAxis {
             AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { _ in
                 AxisGridLine().foregroundStyle(.quaternary)

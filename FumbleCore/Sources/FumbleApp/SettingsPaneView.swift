@@ -75,8 +75,16 @@ struct SettingsPaneView: View {
                     HStack {
                         Text("Volume")
                         Slider(value: soundVolume, in: 0...1)
-                        Button("Test") { coordinator.sounds.key(volume: coordinator.soundVolume) }
-                            .buttonStyle(.borderless)
+                        // Plays the click once at the chosen volume, so you can dial it in
+                        // without starting a drill.
+                        Button {
+                            coordinator.sounds.key(volume: coordinator.soundVolume)
+                        } label: {
+                            Label("Preview", systemImage: "speaker.wave.2.fill")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .help("Play the key click at this volume")
                     }
                 }
             }

@@ -63,7 +63,6 @@ struct DropdownView: View {
         }
         .padding(14)
         .frame(width: 340)
-        .preferredColorScheme(coordinator.appearance.colorScheme)
     }
 
     // MARK: - Sections

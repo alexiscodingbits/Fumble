@@ -1,7 +1,11 @@
-import SwiftUI
+import AppKit
 
-/// Light / dark / follow-the-system. Applied via `.preferredColorScheme` on each top-level
-/// surface (app window and menu-bar dropdown), so the choice covers the whole UI.
+/// Light / dark / follow-the-system.
+///
+/// Applied by setting `NSApp.appearance` app-wide rather than SwiftUI's
+/// `.preferredColorScheme`: passing nil to preferredColorScheme does not reliably clear an
+/// explicit override once one has been applied (switching Dark -> System left windows in a
+/// half-dark zombie state), while `NSApp.appearance = nil` genuinely reverts to the system.
 enum AppearanceMode: String, CaseIterable, Identifiable {
     case system, light, dark
     var id: String { rawValue }
@@ -12,12 +16,13 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
         case .dark: "Dark"
         }
     }
-    /// nil means "inherit the system setting" to SwiftUI.
-    var colorScheme: ColorScheme? {
+
+    @MainActor
+    func apply() {
         switch self {
-        case .system: nil
-        case .light: .light
-        case .dark: .dark
+        case .system: NSApp.appearance = nil
+        case .light: NSApp.appearance = NSAppearance(named: .aqua)
+        case .dark: NSApp.appearance = NSAppearance(named: .darkAqua)
         }
     }
 }

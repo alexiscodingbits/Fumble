@@ -62,7 +62,10 @@ public final class AppCoordinator {
         didSet { UserDefaults.standard.set(cursorStyle.rawValue, forKey: "cursorStyle") }
     }
     var appearance: AppearanceMode {
-        didSet { UserDefaults.standard.set(appearance.rawValue, forKey: "appearance") }
+        didSet {
+            UserDefaults.standard.set(appearance.rawValue, forKey: "appearance")
+            appearance.apply()
+        }
     }
     /// Daily practice goal in minutes; 0 = off. A reminder, never a limit.
     public var dailyGoalMinutes: Int {
@@ -190,6 +193,7 @@ public final class AppCoordinator {
     /// Entry point. Either begins capture (if already permitted) or starts watching for the
     /// permission to be granted. Idempotent.
     public func start() {
+        appearance.apply()   // NSApp exists by now; init may run before the app object does
         hasPermission = EventTap.hasPermission
         if hasPermission {
             beginCapture()
