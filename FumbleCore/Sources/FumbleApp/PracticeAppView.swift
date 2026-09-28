@@ -51,7 +51,11 @@ struct PracticeAppView: View {
             List(Pane.allCases, selection: $pane) { pane in
                 Label(pane.title, systemImage: pane.icon).tag(pane)
             }
-            .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 220)
+            // Exactly 180 — min == ideal == max. Two reasons: the sidebar is a 3-item list, so
+            // user-resizing it is pure dead space; and a width *range* makes the reopen
+            // animation glitch (the column first lays out at min, then renegotiates to ideal
+            // mid-slide). A pinned width slides in one clean motion, mirroring the close.
+            .navigationSplitViewColumnWidth(180)
             // Bottom-left of the app: the only ask in a free product.
             .safeAreaInset(edge: .bottom) {
                 Button {
