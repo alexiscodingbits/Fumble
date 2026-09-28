@@ -11,7 +11,7 @@ struct SettingsPaneView: View {
     }
     private var typingAssist: Binding<DrillState.ErrorHandling> {
         Binding(
-            get: { DrillState.ErrorHandling(rawValue: coordinator.typingAssistRaw) ?? .advance },
+            get: { DrillState.ErrorHandling(rawValue: coordinator.typingAssistRaw) ?? .stopUntilCorrect },
             set: { coordinator.typingAssistRaw = $0.rawValue }
         )
     }

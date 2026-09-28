@@ -44,6 +44,7 @@ struct PracticeAppView: View {
 
     @State private var pane: Pane = .practice
     @State private var mode: Mode = .trainer
+    @State private var showIntro = false
 
     var body: some View {
         NavigationSplitView {
@@ -82,8 +83,16 @@ struct PracticeAppView: View {
         .onAppear {
             NSApp.setActivationPolicy(.regular)
             NSApp.activate(ignoringOtherApps: true)
+            if !coordinator.hasSeenPracticeIntro { showIntro = true }
         }
         .onDisappear { NSApp.setActivationPolicy(.accessory) }
+        .sheet(isPresented: $showIntro) {
+            PracticeIntroView { showIntro = false }
+        }
+        // Marked seen on dismissal (not presentation), so quitting mid-intro re-shows it.
+        .onChange(of: showIntro) { _, showing in
+            if !showing { coordinator.hasSeenPracticeIntro = true }
+        }
     }
 
     private var practicePane: some View {
@@ -97,6 +106,14 @@ struct PracticeAppView: View {
                 .frame(maxWidth: 480)
                 Spacer()
                 goalChip
+                Button {
+                    showIntro = true
+                } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .help("How practice works")
             }
             .padding(12)
 
@@ -153,6 +170,63 @@ struct PracticeAppView: View {
                 }
             }
             .help("Today's practice toward your daily goal")
+        }
+    }
+}
+
+/// First-run intro: the three things about practice that aren't obvious from the UI —
+/// shown once when the practice window first opens, re-openable from the ? in the header.
+struct PracticeIntroView: View {
+    let dismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(spacing: 12) {
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .frame(width: 44, height: 44)
+                Text("How practice works")
+                    .font(.title2.weight(.semibold))
+            }
+
+            introRow(
+                icon: "target",
+                title: "Pre-aimed at your weak spots",
+                body: "Lessons come from how you really type all day — letters you already type fast start mastered, so lesson one targets a genuine weakness."
+            )
+            introRow(
+                icon: "hand.raised",
+                title: "A wrong key stops the drill",
+                body: "Nothing autocorrects. The cursor waits until you hit the right key — that's what retrains the finger. Prefer to keep moving and fix with ⌫? Settings → On a wrong key."
+            )
+            introRow(
+                icon: "chart.bar",
+                title: "Practice never touches your stats",
+                body: "Drill typing is excluded from your daily numbers, so practising can't distort the picture of your real typing."
+            )
+
+            HStack {
+                Spacer()
+                Button("Start practising", action: dismiss)
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(28)
+        .frame(width: 480)
+    }
+
+    private func introRow(icon: String, title: String, body text: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(.tint)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.headline)
+                Text(text).font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }

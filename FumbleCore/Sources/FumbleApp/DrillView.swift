@@ -232,7 +232,7 @@ struct DrillView: View {
         plan = makePassage.map { $0(coordinator) } ?? coordinator.makeDrill()
         drill = DrillState(
             target: plan.text,
-            errorHandling: DrillState.ErrorHandling(rawValue: coordinator.typingAssistRaw) ?? .advance
+            errorHandling: DrillState.ErrorHandling(rawValue: coordinator.typingAssistRaw) ?? .stopUntilCorrect
         )
         passageActiveSeconds = 0
         lastKeystrokeStamp = nil

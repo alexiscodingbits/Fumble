@@ -232,7 +232,7 @@ struct TrainerView: View {
         )
         drill = DrillState(
             target: text,
-            errorHandling: DrillState.ErrorHandling(rawValue: coordinator.typingAssistRaw) ?? .advance
+            errorHandling: DrillState.ErrorHandling(rawValue: coordinator.typingAssistRaw) ?? .stopUntilCorrect
         )
         passageActiveSeconds = 0
         lastKeystrokeStamp = nil

@@ -49,6 +49,10 @@ public final class AppCoordinator {
     public var typingAssistRaw: String {
         didSet { UserDefaults.standard.set(typingAssistRaw, forKey: "typingAssist") }
     }
+    /// Whether the first-run practice intro has been shown (and dismissed) once.
+    public var hasSeenPracticeIntro: Bool {
+        didSet { UserDefaults.standard.set(hasSeenPracticeIntro, forKey: "hasSeenPracticeIntro") }
+    }
     var soundMode: SoundMode {
         didSet { UserDefaults.standard.set(soundMode.rawValue, forKey: "soundMode") }
     }
@@ -132,7 +136,10 @@ public final class AppCoordinator {
         self.targetWPM = storedTarget > 0 ? storedTarget : 35
 
         let defaults = UserDefaults.standard
-        self.typingAssistRaw = defaults.string(forKey: "typingAssist") ?? "advance"
+        // Stop-until-correct by default: it's the keybr behaviour that actually retrains a
+        // finger, and new users expect a coach to hold the line rather than autocorrect past it.
+        self.typingAssistRaw = defaults.string(forKey: "typingAssist") ?? "stopUntilCorrect"
+        self.hasSeenPracticeIntro = defaults.bool(forKey: "hasSeenPracticeIntro")
         self.soundMode = defaults.string(forKey: "soundMode").flatMap(SoundMode.init(rawValue:)) ?? .off
         self.soundVolume = defaults.object(forKey: "soundVolume") != nil ? defaults.double(forKey: "soundVolume") : 0.5
         self.showWhitespaceDots = defaults.object(forKey: "showWhitespaceDots") != nil
