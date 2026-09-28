@@ -95,6 +95,18 @@ The full account, including the part that *is* a residual risk and what's done a
 
 Requires macOS 14+.
 
+**Homebrew:**
+
+```sh
+brew install --cask alexiscodingbits/fumble/fumble
+```
+
+**Direct download:** grab the DMG from the
+[latest release](https://github.com/alexiscodingbits/Fumble/releases/latest) and drag
+Fumble to Applications.
+
+**Build from source:**
+
 ```sh
 git clone https://github.com/alexiscodingbits/Fumble.git
 cd Fumble
@@ -143,9 +155,9 @@ stats** so drills can't distort the model that generates them.
 - [x] **M1** — capture core, latency histograms, per-key/bigram/app stats, persistence
 - [x] **M3** — weak-spot ranking, dropdown UI, keyboard heatmap, stats pane
 - [x] **M4** — adaptive trainer + drills + practice modes (see above)
-- [x] **M5 (partial)** — Developer ID signed + notarized builds
+- [x] **M5** — public release: Developer ID signed + notarized DMG, Homebrew cask
 - [ ] **M2** — validate the injected-keystroke filter against real automation tools
-- [ ] **M5** — public release, Homebrew cask, auto-update
+- [ ] auto-update (Sparkle)
 - [ ] **v2** — the interesting one: **word- and token-level** coaching. Every tool in this space
       stops at individual keys and bigrams. Nothing knows that you fumble `useEffect` or
       `provenmetal` specifically. The plan is to build that vocabulary from your own repos and
