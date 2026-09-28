@@ -9,8 +9,9 @@ pseudo-random letter soup resembles the things you really type.
 
 macOS menu bar. Free. Open source. Entirely on-device.
 
-> **Status: nearly ready.** Capture, analysis, the adaptive trainer, and five practice modes
-> are built and tested. Public release is imminent — see [Roadmap](#roadmap).
+![The adaptive trainer — pre-aimed at your real weak letters](docs/screenshot-trainer.png)
+
+![Stats — a speed heatmap of your keyboard from real all-day typing](docs/screenshot-stats.png)
 
 ---
 
