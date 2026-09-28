@@ -9,6 +9,9 @@ struct SettingsPaneView: View {
     private var targetWPM: Binding<Double> {
         Binding(get: { coordinator.targetWPM }, set: { coordinator.targetWPM = $0 })
     }
+    private var strictUnlock: Binding<Bool> {
+        Binding(get: { coordinator.strictUnlock }, set: { coordinator.strictUnlock = $0 })
+    }
     private var typingAssist: Binding<DrillState.ErrorHandling> {
         Binding(
             get: { DrillState.ErrorHandling(rawValue: coordinator.typingAssistRaw) ?? .stopUntilCorrect },
@@ -47,6 +50,10 @@ struct SettingsPaneView: View {
                     Text("A letter is 'mastered' — and the next unlocks — once you reach this speed on it.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                Toggle("Unlock a new letter only when every unlocked letter is above target",
+                       isOn: strictUnlock)
+                Text("On: old letters can't quietly rot — the next letter waits until the whole set is at target. Off: mastering just the focused letter unlocks the next, which moves faster.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
             Section("Typing") {

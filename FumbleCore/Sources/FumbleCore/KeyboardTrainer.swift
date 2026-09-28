@@ -22,6 +22,11 @@ public final class KeyboardTrainer {
         public var minimumUnlocked: Int = 6
         /// How much a fresh drill result moves a key's running confidence (0–1). Low = smooth.
         public var blend: Double = 0.35
+        /// keybr's "unlock a next key only when the previous keys are also above the target
+        /// speed". True (default): the next letter unlocks only when EVERY unlocked letter is
+        /// at target — slower, but old letters can't quietly rot. False: reaching target on
+        /// just the focused letter unlocks the next one.
+        public var strictUnlock: Bool = true
 
         public init() {}
     }
@@ -139,6 +144,7 @@ public final class KeyboardTrainer {
     /// next letter if everything currently shown is mastered. Every measured key also gets its
     /// RAW sample appended to the telemetry history — the blend applies only to the unlock signal.
     public func record(perKeyWPM: [Int: Double]) {
+        let focusBefore = focusKey
         // The `sample > 0` guard covers history too: a non-positive WPM means "not actually
         // measured this lesson", and storing it would report a last speed of 0 and drag the
         // learning rate — nil/absent, not zero, is how we say "unknown".
@@ -147,7 +153,12 @@ public final class KeyboardTrainer {
             wpm[keyCode] = previous + (sample - previous) * config.blend
             appendHistory(sample, for: keyCode)
         }
-        if allUnlockedMastered, unlockedCount < alphabet.count {
+        // Strict: every unlocked letter at target. Lenient (keybr's default semantics with the
+        // option off): mastering just the focused letter is enough, even if older ones dipped.
+        let unlockDue = config.strictUnlock
+            ? allUnlockedMastered
+            : (focusBefore.map { isMastered($0) } ?? allUnlockedMastered)
+        if unlockDue, unlockedCount < alphabet.count {
             unlockedCount += 1
         }
     }
@@ -166,6 +177,11 @@ public final class KeyboardTrainer {
     /// a settings change must reach the running trainer — not wait for a relaunch.
     public func updateTarget(wpm: Double) {
         config.targetWPM = wpm
+    }
+
+    /// Apply the unlock-rule setting live, same reasoning as `updateTarget`.
+    public func updateStrictUnlock(_ strict: Bool) {
+        config.strictUnlock = strict
     }
 
     /// Manually unlock the next letter (a "skip / add a letter" control), if any remain.

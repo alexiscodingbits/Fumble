@@ -42,6 +42,14 @@ public final class AppCoordinator {
     }
     private static let targetWPMKey = "targetWPM"
 
+    /// keybr's "unlock a next key only when the previous keys are also above the target speed".
+    public var strictUnlock: Bool {
+        didSet {
+            UserDefaults.standard.set(strictUnlock, forKey: "strictUnlock")
+            cachedTrainer?.updateStrictUnlock(strictUnlock)
+        }
+    }
+
     // MARK: Practice preferences (all persisted, applied live)
 
     /// How mistakes behave in practice: advance-through (fix with backspace) or keybr-style
@@ -134,6 +142,8 @@ public final class AppCoordinator {
             .flatMap(Timeframe.init(rawValue:)) ?? .today
         let storedTarget = UserDefaults.standard.double(forKey: Self.targetWPMKey)
         self.targetWPM = storedTarget > 0 ? storedTarget : 35
+        self.strictUnlock = UserDefaults.standard.object(forKey: "strictUnlock") != nil
+            ? UserDefaults.standard.bool(forKey: "strictUnlock") : true
 
         let defaults = UserDefaults.standard
         // Stop-until-correct by default: it's the keybr behaviour that actually retrains a
@@ -561,6 +571,7 @@ public final class AppCoordinator {
         }
         var config = KeyboardTrainer.Config()
         config.targetWPM = targetWPM
+        config.strictUnlock = strictUnlock
 
         let trainer: KeyboardTrainer
         if let data = try? Data(contentsOf: trainerSnapshotURL),

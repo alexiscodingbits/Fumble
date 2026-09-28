@@ -38,7 +38,7 @@ struct TrainerView: View {
             header
             VirtualKeyboardView(focusKeyCode: trainer.focusKey?.keyCode, keyColor: keyColor)
                 .frame(maxWidth: .infinity)
-            Text("Keys: your relative speed (warmer = slower) · grey = locked · blue outline = being practised")
+            Text("Keys: progress to your target (green = at target) · grey = locked · blue outline = being practised")
                 .font(.caption2).foregroundStyle(.tertiary)
             typingSurface
         }
@@ -158,18 +158,12 @@ struct TrainerView: View {
         guard trainer.unlockedKeys.contains(where: { $0.keyCode == keyCode }) else {
             return SkillColor.locked
         }
-        // Coloured RELATIVE to your own spread, like the Stats heatmap — not progress-to-target.
-        // For a typist above target on everything, target-based colouring saturates the whole
-        // board uniform green and says nothing; relative colouring keeps the slowest letters
-        // visibly warmer, which is the thing worth seeing. (The bars below stay target-based —
-        // the two encodings answer different questions.)
-        let speeds = trainer.unlockedKeys.compactMap { trainer.wpm[$0.keyCode] }
-        guard let low = speeds.min(), let high = speeds.max(), high - low > 1 else {
-            // No meaningful spread (fresh start, or genuinely uniform): fall back to target-based.
-            return SkillColor.color(trainer.confidence(for: KeyIdentity(keyCode: keyCode))).opacity(0.85)
-        }
-        let wpm = trainer.wpm[keyCode] ?? low
-        return SkillColor.color((wpm - low) / (high - low)).opacity(0.85)
+        // Coloured by progress toward the TARGET, keybr-style: green means "this letter is at
+        // your target speed", full stop. An all-green board is a real signal (raise the target),
+        // and it can never contradict the "all letters at target" banner. Relative-spread
+        // colouring did contradict it — every board showed red somewhere, even at target.
+        // (The relative heatmap still exists where it belongs: Stats.)
+        return SkillColor.color(trainer.confidence(for: KeyIdentity(keyCode: keyCode))).opacity(0.85)
     }
 
     private func handle(_ press: KeyPress) -> KeyPress.Result {

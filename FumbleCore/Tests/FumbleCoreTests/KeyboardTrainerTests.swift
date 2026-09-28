@@ -62,6 +62,22 @@ struct KeyboardTrainerTests {
         #expect(trainer.unlockedCount == before + 1)
     }
 
+    @Test("lenient unlock: mastering just the focused letter unlocks the next")
+    func lenientUnlock() {
+        var config = KeyboardTrainer.Config()
+        config.strictUnlock = false
+        let trainer = KeyboardTrainer(seed: [:], config: config)
+        let before = trainer.unlockedCount
+        let focus = trainer.focusKey!
+        // Only the focused letter reaches target; the rest stay weak.
+        trainer.record(perKeyWPM: [focus.keyCode: 80.0])
+        #expect(trainer.unlockedCount == before + 1)
+        // Sanity: strict mode would NOT have unlocked here.
+        let strict = KeyboardTrainer(seed: [:])
+        strict.record(perKeyWPM: [strict.focusKey!.keyCode: 80.0])
+        #expect(strict.unlockedCount == before)
+    }
+
     @Test("a weak letter blocks further unlocks")
     func weakLetterBlocksUnlock() {
         let trainer = KeyboardTrainer(seed: [:])
