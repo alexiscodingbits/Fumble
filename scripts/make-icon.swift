@@ -1,6 +1,8 @@
 #!/usr/bin/env swift
-// Generates assets/icon-1024.png — the Fumble icon: a single keycap knocked slightly askew
-// (a fumbled key), on a deep blue tile. Run: swift scripts/make-icon.swift
+// Generates assets/icon-1024.png — the Fumble icon: a pixel-mosaic "F" with one pixel
+// knocked loose and tumbling away (the fumble). Light-blue tile, darker-blue pixel squares,
+// slight tilt — the same flavour as the pixel-grid macOS wallpaper it's matched to.
+// Run: swift scripts/make-icon.swift
 
 import AppKit
 
@@ -19,61 +21,77 @@ let radius = tile.width * 0.2237
 let tilePath = NSBezierPath(roundedRect: tile, xRadius: radius, yRadius: radius)
 tilePath.addClip()
 
-// Deep blue-slate gradient, darker at the bottom for depth.
-let gradient = NSGradient(colors: [
-    NSColor(calibratedRed: 0.16, green: 0.24, blue: 0.48, alpha: 1),
-    NSColor(calibratedRed: 0.07, green: 0.10, blue: 0.24, alpha: 1),
-])!
-gradient.draw(in: tile, angle: -90)
+// Light-blue gradient, subtly lighter at the top — matched to the pixel-grid wallpaper.
+NSGradient(colors: [
+    NSColor(calibratedRed: 0.46, green: 0.67, blue: 0.90, alpha: 1),
+    NSColor(calibratedRed: 0.36, green: 0.57, blue: 0.84, alpha: 1),
+])!.draw(in: tile, angle: -90)
 
-// The fumbled keycap: a chunky key with a visible 3D base, rotated a few degrees off true.
-// The tilt IS the logo — a key caught mid-fumble.
-let capSize = tile.width * 0.52
-let capRect = CGRect(x: -capSize / 2, y: -capSize / 2, width: capSize, height: capSize)
-let capRadius = capSize * 0.18
+let pixelColor = NSColor(calibratedRed: 0.22, green: 0.42, blue: 0.70, alpha: 1)
 
+// The "F", drawn on a pixel grid. Rows top-to-bottom; '#' is a pixel. The end pixel of the
+// middle bar is missing — it's the one tumbling away below.
+let pattern = [
+    "######",
+    "######",
+    "##....",
+    "##....",
+    "#####.",
+    "####..",
+    "##....",
+    "##....",
+    "##....",
+]
+
+let cell = 62.0     // pixel square edge
+let gap = 10.0      // grid gap, visible like the wallpaper's
+let pitch = cell + gap
+let cols = 6.0, rows = 9.0
+let gridWidth = cols * pitch - gap
+let gridHeight = rows * pitch - gap
+
+// Whole grid tilted a few degrees, like the wallpaper (and the old fumbled-keycap logo).
 context.saveGState()
 context.translateBy(x: tile.midX, y: tile.midY)
-context.rotate(by: -8 * .pi / 180)
+context.rotate(by: -6 * .pi / 180)
 
-// Drop shadow under the whole key.
-context.setShadow(offset: CGSize(width: 0, height: -capSize * 0.05),
-                  blur: capSize * 0.12,
-                  color: NSColor.black.withAlphaComponent(0.45).cgColor)
+// F sits just left of centre so the loose pixel has empty space to fall into.
+let originX = -gridWidth / 2 - tile.width * 0.03
+let originY = gridHeight / 2
 
-// Key base (the darker slab visible below the cap face).
-let basePath = NSBezierPath(
-    roundedRect: capRect.offsetBy(dx: 0, dy: -capSize * 0.06),
-    xRadius: capRadius, yRadius: capRadius
+func drawPixel(x: CGFloat, y: CGFloat, rotation: CGFloat = 0, airborne: Bool = false) {
+    context.saveGState()
+    context.translateBy(x: x + cell / 2, y: y + cell / 2)
+    context.rotate(by: rotation * .pi / 180)
+    // Grounded pixels get the wallpaper's tight soft shadow; the airborne one floats higher.
+    context.setShadow(
+        offset: CGSize(width: 0, height: airborne ? -cell * 0.22 : -cell * 0.09),
+        blur: airborne ? cell * 0.38 : cell * 0.16,
+        color: NSColor.black.withAlphaComponent(airborne ? 0.35 : 0.22).cgColor
+    )
+    let rect = CGRect(x: -cell / 2, y: -cell / 2, width: cell, height: cell)
+    pixelColor.setFill()
+    NSBezierPath(roundedRect: rect, xRadius: cell * 0.18, yRadius: cell * 0.18).fill()
+    context.restoreGState()
+}
+
+for (row, line) in pattern.enumerated() {
+    for (col, ch) in line.enumerated() where ch == "#" {
+        drawPixel(
+            x: originX + CGFloat(col) * pitch,
+            y: originY - CGFloat(row) * pitch - cell
+        )
+    }
+}
+
+// The fumbled pixel: fallen out of the end of the middle bar (row 5, col 4 — the gap in the
+// pattern), caught mid-tumble just below and to the right of where it came from.
+drawPixel(
+    x: originX + 4.85 * pitch,
+    y: originY - 6.55 * pitch - cell,
+    rotation: 26,
+    airborne: true
 )
-NSColor(calibratedRed: 0.72, green: 0.76, blue: 0.84, alpha: 1).setFill()
-basePath.fill()
-context.setShadow(offset: .zero, blur: 0, color: nil)
-
-// Cap face, slightly smaller and raised, with a soft top-lit gradient. The face clip lives in
-// its own GState so it can't leak into (or wipe out) the letter drawing below.
-let faceRect = capRect.insetBy(dx: capSize * 0.035, dy: capSize * 0.035)
-    .offsetBy(dx: 0, dy: capSize * 0.03)
-let facePath = NSBezierPath(roundedRect: faceRect, xRadius: capRadius * 0.9, yRadius: capRadius * 0.9)
-context.saveGState()
-facePath.addClip()
-NSGradient(colors: [
-    NSColor(calibratedRed: 0.99, green: 0.99, blue: 1.00, alpha: 1),
-    NSColor(calibratedRed: 0.88, green: 0.90, blue: 0.95, alpha: 1),
-])!.draw(in: faceRect, angle: -90)
-context.restoreGState()
-
-// The letter, printed on the cap face — dark ink, tilted with the key.
-let letter = "F" as NSString
-let font = NSFont.monospacedSystemFont(ofSize: capSize * 0.52, weight: .bold)
-let attributes: [NSAttributedString.Key: Any] = [
-    .font: font,
-    .foregroundColor: NSColor(calibratedRed: 0.13, green: 0.17, blue: 0.30, alpha: 1),
-]
-let textSize = letter.size(withAttributes: attributes)
-letter.draw(at: NSPoint(x: faceRect.midX - textSize.width / 2,
-                        y: faceRect.midY - textSize.height / 2),
-            withAttributes: attributes)
 
 context.restoreGState()
 
