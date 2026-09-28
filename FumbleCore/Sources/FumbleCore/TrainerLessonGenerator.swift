@@ -84,19 +84,17 @@ public enum TrainerLessonGenerator {
         return words.joined(separator: " ")
     }
 
-    /// Pick one real word — almost always from the focus-containing pool, like keybr: a lesson
-    /// for B should be b-words nearly wall to wall. The occasional (~10%) plain word keeps a
-    /// touch of variety, and thin pools are already handled upstream (naturalShare blends in
-    /// pseudo-words as the focus pool shrinks), so rare letters don't degenerate into a litany.
+    /// Pick one real word — from the focus-containing pool whenever one exists, like keybr:
+    /// every word in a lesson for B contains a b. Thin pools are handled upstream
+    /// (naturalShare blends in pseudo-words as the focus pool shrinks), so rare letters don't
+    /// degenerate into a litany of the same three words.
     private static func naturalWord<R: RandomNumberGenerator>(
         focusPool: [String],
         plainPool: [String],
         avoiding lastWord: String?,
         using rng: inout R
     ) -> String {
-        let wantFocus = !focusPool.isEmpty
-            && (plainPool.isEmpty || Double.random(in: 0..<1, using: &rng) < 0.9)
-        let pool = wantFocus ? focusPool : plainPool
+        let pool = focusPool.isEmpty ? plainPool : focusPool
         guard var word = pool.randomElement(using: &rng) else { return "" }
         // One redraw avoids most immediate repeats without stalling on thin pools.
         if word == lastWord, pool.count > 1 {
@@ -124,6 +122,13 @@ public enum TrainerLessonGenerator {
             if let label = KeyIdentity.labels[key.keyCode] {
                 word.append(Character(label.lowercased()))
             }
+        }
+        // keybr guarantee: every word in a focused lesson contains the focus letter. The bias
+        // above only makes it likely, so patch one random position when the draw missed.
+        if let focus, let focusLabel = KeyIdentity.labels[focus.keyCode],
+           !word.contains(Character(focusLabel.lowercased())), !word.isEmpty {
+            let i = word.index(word.startIndex, offsetBy: Int.random(in: 0..<word.count, using: &rng))
+            word.replaceSubrange(i...i, with: focusLabel.lowercased())
         }
         return word
     }

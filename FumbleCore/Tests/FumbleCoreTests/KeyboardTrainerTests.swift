@@ -113,16 +113,21 @@ struct TrainerLessonGeneratorTests {
         #expect(text.allSatisfy { allowed.contains($0) })
     }
 
-    @Test("features the focus letter heavily")
+    @Test("every word contains the focus letter — the keybr guarantee")
     func featuresFocus() {
+        // Across seeds and with/without a natural pool: a lesson for r is r-words wall to wall.
         let unlocked = keys("etaoinsr")
         let focus = KeyIdentity(keyCode: code("r"))
-        var rng = SeededRNG(seed: 11)
-        let text = TrainerLessonGenerator.generate(unlocked: unlocked, focus: focus, wordCount: 40, using: &rng)
-        let words = text.split(separator: " ")
-        let withFocus = words.filter { $0.contains("r") }.count
-        // The focus letter should appear in a large share of words.
-        #expect(Double(withFocus) / Double(words.count) > 0.6)
+        for seed in UInt64(1)...20 {
+            var rng = SeededRNG(seed: seed)
+            let text = TrainerLessonGenerator.generate(
+                unlocked: unlocked, focus: focus, wordCount: 40,
+                naturalWords: seed.isMultiple(of: 2) ? WordList.english : [],
+                using: &rng
+            )
+            let words = text.split(separator: " ")
+            #expect(words.allSatisfy { $0.contains("r") })
+        }
     }
 
     @Test("produces the requested word count")
