@@ -1,0 +1,340 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Fumble launch overlay</title>
+<style>
+  @font-face {
+    font-family: "FMono";
+    src: url("/__sfmono.ttf"), url("file:///System/Library/Fonts/SFNSMono.ttf");
+  }
+  :root {
+    --blue: #6f8fcf;
+    --blue-deep: #5577b8;
+    --ink: #3a4660;
+    --grey: #6e7686;
+    --grey-soft: #a9aeb9;
+    --orange: #f2793f;
+    --orange-edge: #d65f2a;
+    --red: #e5484d;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+    --mono: "FMono", "SF Mono", Menlo, monospace;
+  }
+  html, body { margin: 0; background: transparent; }
+  #frame { width: 1920px; height: 1080px; position: relative; overflow: hidden; }
+
+  /* Preview mode: the video frame behind, scaled to fit the window. */
+  body.preview { background: #18181a; min-height: 100vh; font-family: var(--sans); color: #ddd; }
+  body.preview #fit { margin: 20px auto 0; overflow: hidden; border-radius: 8px; }
+  body.preview #frame { transform-origin: top left; background: url(preview-bg.png) center / cover; }
+  #controls { display: none; }
+  body.preview #controls { display: flex; gap: 8px; justify-content: center; margin: 16px; }
+  #controls button { font: 14px var(--sans); padding: 6px 14px; border-radius: 6px; border: 1px solid #444; background: #262628; color: #ddd; cursor: pointer; }
+  #controls button.on { background: var(--orange); border-color: var(--orange); color: #fff; }
+
+  .overlay { position: absolute; left: 96px; top: 92px; font-family: var(--sans); -webkit-font-smoothing: antialiased; display: none; }
+  .overlay.active { display: block; }
+  .txt { white-space: pre; }
+  .caret { display: inline-block; width: 2.5px; height: 1.05em; margin-left: 1px; margin-right: -3.5px; background: var(--orange); border-radius: 2px; vertical-align: -0.17em; }
+  .caret.off { visibility: hidden; }
+
+  /* Shared glass, matching the floating browser window in the video. */
+  .glass {
+    background: linear-gradient(180deg, rgba(255,255,255,0.62), rgba(255,255,255,0.34));
+    border: 1px solid rgba(255,255,255,0.85);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 24px 60px -24px rgba(50,70,110,0.28), 0 2px 10px rgba(50,70,110,0.06);
+  }
+
+  /* Small orange keycap, like the F key on the keyboard. */
+  .keycap {
+    display: inline-flex; align-items: center; justify-content: center;
+    background: linear-gradient(180deg, #f6935f, var(--orange));
+    color: #fff; font-weight: 700; border-radius: 22%;
+    box-shadow: inset 0 -3px 0 var(--orange-edge), 0 4px 10px -2px rgba(214,95,42,0.45);
+  }
+
+  /* A — glass note */
+  #a .card { width: 440px; box-sizing: border-box; padding: 26px 30px 28px; border-radius: 22px; }
+  #a .dots { display: flex; gap: 7px; margin-bottom: 18px; }
+  #a .dots i { width: 9px; height: 9px; border-radius: 50%; background: rgba(120,130,150,0.28); }
+  #a .ln { min-height: 1.35em; }
+  #a .title { font-size: 34px; font-weight: 600; color: var(--blue-deep); letter-spacing: -0.4px; margin-bottom: 10px; }
+  #a .body { font-size: 21px; color: var(--grey); line-height: 1.55; }
+
+  /* B — search pill */
+  #b .brand { display: flex; align-items: center; gap: 10px; margin: 0 0 16px 6px; }
+  #b .brand .keycap { width: 30px; height: 30px; font-size: 18px; }
+  #b .brand span { font-size: 22px; font-weight: 600; color: var(--blue-deep); letter-spacing: -0.2px; }
+  #b .pill { width: 430px; height: 62px; border-radius: 31px; display: flex; align-items: center; padding: 0 22px; box-sizing: border-box; }
+  #b .pill svg { flex: none; margin-right: 13px; }
+  #b .pill .q { font-size: 21px; color: #485164; flex: 1; }
+  #b .sel { background: rgba(111,143,207,0.3); border-radius: 3px; }
+  #b .check { flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--blue); display: flex; align-items: center; justify-content: center; opacity: 0; }
+
+  /* C — in-app drill */
+  #c .card { width: 440px; box-sizing: border-box; padding: 22px 28px 24px; border-radius: 20px; }
+  #c .head { display: flex; align-items: center; gap: 9px; margin-bottom: 18px; }
+  #c .head .keycap { width: 24px; height: 24px; font-size: 14px; }
+  #c .head .wordmark { height: 34px; display: block; }
+  #c .head em { margin-left: auto; font-style: normal; font-size: 12px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--grey-soft); }
+  #c .drill { font-family: var(--mono); font-size: 25px; line-height: 1.6; color: var(--grey-soft); }
+  #c .drill .ln { white-space: pre; position: relative; }
+  #c .drill .done { color: var(--ink); }
+  #c .drill .bad { color: var(--red); }
+  #c .drill .bar { position: relative; }
+  #c .drill .bar::before { content: ""; position: absolute; left: -1.5px; top: 0.18em; width: 2.5px; height: 1.15em; background: var(--orange); border-radius: 2px; }
+  #c .drill .bar.off::before { visibility: hidden; }
+  #c .foot { margin-top: 14px; font-size: 15px; color: var(--grey); opacity: 0; }
+  #c .foot b { color: var(--blue-deep); font-weight: 600; }
+
+  /* D — bare type */
+  #d .word { display: flex; align-items: center; height: 60px; }
+  #d .word .keycap { width: 50px; height: 50px; font-size: 32px; margin-right: 3px; }
+  #d .word .txt { font-size: 46px; font-weight: 600; color: var(--blue-deep); letter-spacing: -0.8px; }
+  #d .ln { font-size: 23px; color: var(--grey); min-height: 1.5em; line-height: 1.5; }
+  #d .word + .ln { margin-top: 14px; }
+</style>
+</head>
+<body>
+<div id="controls"></div>
+<div id="fit"><div id="frame">
+
+  <div class="overlay" id="a">
+    <div class="card glass">
+      <div class="dots"><i></i><i></i><i></i></div>
+      <div class="ln title"></div>
+      <div class="ln body"></div>
+      <div class="ln body"></div>
+      <div class="ln body"></div>
+    </div>
+  </div>
+
+  <div class="overlay" id="b">
+    <div class="brand"><div class="keycap">F</div><span>Fumble</span></div>
+    <div class="pill glass">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#8b93a3" stroke-width="2" stroke-linecap="round"><circle cx="8.5" cy="8.5" r="6"/><path d="M13 13l4.5 4.5"/></svg>
+      <div class="q"></div>
+      <div class="check"><svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.8l2.7 2.7 5.3-5.6"/></svg></div>
+    </div>
+  </div>
+
+  <div class="overlay" id="c">
+    <div class="card glass">
+      <div class="head"><img class="wordmark" src="wordmark.png" alt="fumble"><em>practice</em></div>
+      <div class="drill"></div>
+      <div class="foot"></div>
+    </div>
+  </div>
+
+  <div class="overlay" id="d">
+    <div class="word"><div class="keycap">F</div><span class="txt"></span></div>
+    <div class="ln"></div>
+    <div class="ln"></div>
+  </div>
+
+</div></div>
+
+<script>
+const DURATION = 12, INTRO = 0.7, OUTRO = 11.1;
+const params = new URLSearchParams(location.search);
+let V = params.get('v') || 'a';
+const RENDER = params.has('render');
+
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const easeOut = x => 1 - Math.pow(1 - x, 3);
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+function rng(seed) {
+  let s = seed >>> 0;
+  return () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
+}
+
+// A typing script becomes timestamped ops on a line buffer. Gaps are jittered and a little
+// longer after a space and after punctuation, so it reads as a person typing, not a ticker.
+function timeline(steps, { start = 0.9, seed = 7, ms = 0.085 } = {}) {
+  const r = rng(seed), ops = [];
+  let t = start, prev = '';
+  for (const s of steps) {
+    if (s.wait) { t += s.wait; continue; }
+    if (s.nl !== undefined) { t += s.nl; ops.push({ t, k: 'nl' }); prev = ''; continue; }
+    if (s.select !== undefined) { t += s.select; ops.push({ t, k: 'sel' }); continue; }
+    if (s.back) {
+      for (let i = 0; i < s.back; i++) { t += (i ? 0.08 : 0.2) * (0.85 + r() * 0.3); ops.push({ t, k: 'bs' }); }
+      continue;
+    }
+    for (const ch of s.type) {
+      let d = (s.ms ?? ms) * (0.55 + r() * 0.9);
+      if (prev === ' ') d += 0.05;
+      if (/[.,:]/.test(prev)) d += 0.14;
+      t += d; ops.push({ t, k: 'ch', ch }); prev = ch;
+    }
+  }
+  return { ops, end: t };
+}
+
+function stateAt(tl, now) {
+  const lines = [''];
+  let sel = false, last = -Infinity;
+  for (const o of tl.ops) {
+    if (o.t > now) break;
+    last = o.t;
+    const i = lines.length - 1;
+    if (o.k === 'ch') { if (sel) { lines[i] = ''; sel = false; } lines[i] += o.ch; }
+    else if (o.k === 'bs') lines[i] = lines[i].slice(0, -1);
+    else if (o.k === 'nl') lines.push('');
+    else if (o.k === 'sel') sel = true;
+  }
+  return { lines, sel, idle: now - last };
+}
+
+// Solid while keys are going in, then a calm blink once typing stops.
+const caretOn = (idle, now) => idle < 0.5 || Math.floor((isFinite(idle) ? idle - 0.5 : now) / 0.53) % 2 === 0;
+const caret = on => `<span class="caret${on ? '' : ' off'}"></span>`;
+
+function envelope(t) {
+  if (t < INTRO) { const p = easeOut(clamp(t / INTRO)); return { o: p, y: (1 - p) * 10, b: (1 - p) * 8 }; }
+  if (t > OUTRO) { const p = easeOut(clamp((t - OUTRO) / (DURATION - OUTRO - 0.05))); return { o: 1 - p, y: -p * 6, b: p * 6 }; }
+  return { o: 1, y: 0, b: 0 };
+}
+
+const OPTIONS = {
+  a: {
+    label: 'A · Glass note',
+    tl: timeline([
+      { type: 'Fumble', ms: 0.11 }, { nl: 0.45 },
+      { type: 'Watches how you type, all day.' }, { nl: 0.35 },
+      { type: 'Finds the keus' }, { wait: 0.22 }, { back: 2 }, { type: 'ys that cost you time.' }, { nl: 0.35 },
+      { type: 'Builds drills to win it back.' },
+    ], { seed: 11, ms: 0.062 }),
+    draw(el, t) {
+      const s = stateAt(this.tl, t), on = caretOn(s.idle, t);
+      el.querySelectorAll('.ln').forEach((ln, i) => {
+        ln.innerHTML = `<span class="txt">${esc(s.lines[i] || '')}</span>` + (i === s.lines.length - 1 ? caret(on) : '');
+      });
+    },
+  },
+
+  b: {
+    label: 'B · Search bar',
+    tl: timeline([
+      { type: 'a typing coach for your Mac' }, { wait: 0.8 }, { select: 0 }, { wait: 0.25 },
+      { type: 'that learns how you really type' }, { wait: 0.8 }, { select: 0 }, { wait: 0.25 },
+      { type: 'and drills what slows you down' },
+    ], { seed: 5, ms: 0.064 }),
+    draw(el, t) {
+      const s = stateAt(this.tl, t), text = esc(s.lines[0]);
+      el.querySelector('.q').innerHTML = s.sel
+        ? `<span class="txt sel">${text}</span>`
+        : `<span class="txt">${text}</span>` + caret(caretOn(s.idle, t));
+      const p = easeOut(clamp((t - this.tl.end - 0.35) / 0.35));
+      const check = el.querySelector('.check');
+      check.style.opacity = p;
+      check.style.transform = `scale(${0.6 + 0.4 * p})`;
+    },
+  },
+
+  c: {
+    label: 'C · In-app drill',
+    lines: ['a typing coach for Mac', 'that learns how you', 'really type and drills', 'what slows you down'],
+    init() {
+      // Each key is either right (advance) or wrong (flash red, caret waits), like the app's
+      // stop-until-correct mode. One deliberate fumble on the "d" of "drills".
+      const target = this.lines.join(' '), r = rng(3), ops = [], fumbleAt = target.indexOf('drills');
+      let t = 1.0, prev = '';
+      for (let i = 0; i < target.length; i++) {
+        const ch = target[i];
+        let d = 0.088 * (0.55 + r() * 0.9);
+        if (prev === ' ') d += 0.06;
+        if (i === fumbleAt) { t += d; ops.push({ t, k: 'err' }); t += 0.3; d = 0.1; }
+        t += d; ops.push({ t, k: 'ok' }); prev = ch;
+      }
+      this.ops = ops; this.end = t;
+      this.total = target.length;
+      this.wpm = Math.round((target.length / 5) / ((t - ops[0].t) / 60));
+      this.acc = Math.floor(100 * target.length / (target.length + 1));
+    },
+    draw(el, t) {
+      let pos = 0, err = false, last = -Infinity;
+      for (const o of this.ops) { if (o.t > t) break; last = o.t; if (o.k === 'ok') { pos++; err = false; } else err = true; }
+      const on = caretOn(t - last, t);
+      let g = 0, html = '';
+      for (const line of this.lines) {
+        let row = '';
+        const chars = (line + ' ').split('');
+        chars.forEach(ch => {
+          const cls = g < pos ? 'done' : (g === pos && err ? 'bad' : '');
+          const bar = g === pos && pos < this.total ? ` bar${on ? '' : ' off'}` : '';
+          row += `<span class="${cls}${bar}">${esc(ch)}</span>`;
+          g++;
+        });
+        html += `<div class="ln">${row}</div>`;
+      }
+      el.querySelector('.drill').innerHTML = html;
+      const foot = el.querySelector('.foot');
+      foot.innerHTML = `<b>${this.wpm} wpm</b> &nbsp;·&nbsp; ${this.acc}% accuracy`;
+      foot.style.opacity = easeOut(clamp((t - this.end - 0.3) / 0.5));
+    },
+  },
+
+  d: {
+    label: 'D · Bare type',
+    tl: timeline([
+      { type: 'umble', ms: 0.1 }, { nl: 0.5 },
+      { type: 'Find the keys slowign' }, { wait: 0.25 }, { back: 2 }, { type: 'ng you down.' }, { nl: 0.4 },
+      { type: 'Then fix them with the words you actually type.', ms: 0.075 },
+    ], { start: 1.0, seed: 21 }),
+    draw(el, t) {
+      const s = stateAt(this.tl, t), on = caretOn(s.idle, t);
+      const slots = [el.querySelector('.word .txt'), ...el.querySelectorAll('.ln')];
+      slots.forEach((slot, i) => {
+        slot.innerHTML = `<span class="txt">${esc(s.lines[i] || '')}</span>` + (i === s.lines.length - 1 ? caret(on) : '');
+      });
+      // The keycap lands first, with a small overshoot, then the rest of the word types after it.
+      const k = clamp((t - 0.25) / 0.45), cap = el.querySelector('.keycap');
+      const bounce = k < 1 ? 1 + Math.sin(k * Math.PI) * 0.12 * (1 - k) : 1;
+      cap.style.transform = `scale(${(0.7 + 0.3 * easeOut(k)) * bounce})`;
+      cap.style.opacity = easeOut(k);
+    },
+  },
+};
+OPTIONS.c.init();
+for (const o of Object.values(OPTIONS)) o.end ??= o.tl.end;
+
+window.renderAt = t => {
+  document.querySelectorAll('.overlay').forEach(el => el.classList.toggle('active', el.id === V));
+  const el = document.getElementById(V), e = envelope(t);
+  el.style.opacity = e.o;
+  el.style.transform = `translateY(${e.y}px)`;
+  el.style.filter = e.b > 0.01 ? `blur(${e.b}px)` : 'none';
+  OPTIONS[V].draw(el, t);
+};
+window.typingEnds = () => Object.fromEntries(Object.entries(OPTIONS).map(([k, o]) => [k, +o.end.toFixed(2)]));
+
+if (RENDER) {
+  renderAt(0);
+} else {
+  document.body.classList.add('preview');
+  const fit = document.getElementById('fit'), frame = document.getElementById('frame');
+  const resize = () => {
+    const s = Math.min((innerWidth - 40) / 1920, (innerHeight - 100) / 1080);
+    frame.style.transform = `scale(${s})`;
+    fit.style.width = 1920 * s + 'px'; fit.style.height = 1080 * s + 'px';
+  };
+  addEventListener('resize', resize); resize();
+
+  const controls = document.getElementById('controls');
+  let t0 = performance.now();
+  for (const [k, o] of Object.entries(OPTIONS)) {
+    const b = document.createElement('button');
+    b.textContent = o.label; b.dataset.v = k;
+    b.onclick = () => { V = k; t0 = performance.now(); sync(); };
+    controls.append(b);
+  }
+  const sync = () => controls.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === V));
+  sync();
+  const loop = now => { renderAt(((now - t0) / 1000) % (DURATION + 0.8)); requestAnimationFrame(loop); };
+  requestAnimationFrame(loop);
+}
+</script>
+</body>
+</html>
