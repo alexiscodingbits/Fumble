@@ -127,6 +127,31 @@
   .shot { border-radius: 14px; overflow: hidden; background: #fff; box-shadow: 0 34px 70px rgba(29, 46, 79, .28), 0 0 0 1px rgba(0, 0, 0, .06); }
   .three .shot { box-shadow: 0 34px 70px rgba(120, 40, 60, .22), 0 0 0 1px rgba(0, 0, 0, .05); }
 
+  /* ---------- card two · the demo. Three desktop screenshots with a pointer, a spotlight and
+     live typing layered over them; every size is in cqw so it scales with the column. ---------- */
+  .scene { position: relative; aspect-ratio: 1800 / 1169; container-type: inline-size; overflow: hidden; background: #e9eef4; }
+  .scene > * { position: absolute; }
+  .scene .f { inset: 0; width: 100%; height: 100%; opacity: 0; }
+  .scene .f.on { opacity: 1; }
+  .scene .dim { inset: 0; opacity: 0; background: radial-gradient(circle at 82.1% 1.7%, rgba(20, 20, 24, 0) 0, rgba(20, 20, 24, 0) 2.3cqw, rgba(20, 20, 24, .74) 5.2cqw); }
+  .scene .press { width: 13.5%; height: 4.6%; left: 43.25%; top: 65.9%; border-radius: .9cqw; background: #fff; opacity: 0; }
+  .scene .drill { left: 37.9%; top: 49.6%; width: 34.7%; height: 13.3%; padding: .62cqw .95cqw; border-radius: .5cqw; background: #fff; box-shadow: inset 0 0 0 .06cqw rgba(0, 0, 0, .08); font: 1.222cqw/1.885cqw var(--mono); color: #808388; white-space: pre; opacity: 0; }
+  .scene .drill b { font-weight: 400; color: #1d1d1f; }
+  .scene .drill i { font-style: normal; opacity: .55; }
+  .scene .drill .k { display: inline-block; width: .16cqw; height: 1.3cqw; margin: 0 -.16cqw 0 0; vertical-align: -.2cqw; background: var(--orange); border-radius: .08cqw; }
+  .scene .cur { left: 0; top: 0; width: 1.6cqw; filter: drop-shadow(0 .1cqw .2cqw rgba(0, 0, 0, .35)); transform-origin: 15% 8%; will-change: transform; }
+  .scene .end { inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.2cqw; background: var(--paper); opacity: 0; text-align: center; }
+  .scene .end img { width: 34%; }
+  .scene .end p { font: italic 400 3.1cqw/1.2 "Bodoni 72", Didot, "Playfair Display", "Times New Roman", serif; color: var(--navy); letter-spacing: -.05cqw; }
+  .scene .end p b { font-weight: 400; color: var(--orange); }
+  .scene .end a { font: 500 1.5cqw -apple-system, sans-serif; color: var(--sub); text-decoration: none; }
+  .scene .end a span { color: var(--orange); }
+
+  /* the word "Free" on the hero jumps out a second after the page opens */
+  .free { display: inline-block; padding: 0 .5em; margin: 0 -.5em; border-radius: .45em; transform-origin: 50% 85%; }
+  .free.go { color: #fff; background: linear-gradient(180deg, #f39a5e, var(--orange)); box-shadow: 0 .16em 0 var(--orange-deep), 0 .45em .9em rgba(194, 88, 43, .35); transform: scale(1.28) rotate(-3deg); animation: freepop .75s cubic-bezier(.3, 1.5, .4, 1) both; }
+  @keyframes freepop { 0% { transform: scale(.7); } 45% { transform: scale(1.75) rotate(-7deg); } 100% { transform: scale(1.28) rotate(-3deg); } }
+
   /* ---------- typeable text ---------- */
   .type {
     position: relative; margin-top: 20px; padding: 16px 18px 18px; border-radius: 14px; cursor: text; outline: none;
@@ -175,6 +200,7 @@
     .icon { animation: none; }
     .type .caret { transition: none; }
     .card.press { transition: none; transform: none; filter: none; }
+    .free.go { animation: none; }
   }
 </style>
 </head>
@@ -195,7 +221,7 @@
   <div class="calm">
     <p class="tagline">The typing coach that learns from your mistakes.</p>
     <a class="btn" href="https://github.com/alexiscodingbits/Fumble/releases/latest/download/Fumble.dmg"><svg><use href="#apple"/></svg>Download for Mac</a>
-    <p class="fine">Free<span class="dot">·</span>Open source<span class="dot">·</span>macOS 14 or later</p>
+    <p class="fine"><span class="free">Free</span><span class="dot">·</span>Open source<span class="dot">·</span>macOS 14 or later</p>
   </div>
 </header>
 
@@ -217,7 +243,22 @@
         <li><b>honest</b><span>Pastes, text expanders, autorepeat and idle time are left out of your WPM, and every exclusion is counted.</span></li>
       </ul>
     </div>
-    <div class="shot"><img src="assets/screenshot-trainer.webp" alt="Fumble's trainer: a keyboard coloured by how you actually type, and a drill aimed at your weak letters" width="1696" height="1320"></div>
+    <div class="shot">
+      <div class="scene" id="scene" role="group" aria-label="Demo: download Fumble, open it from the menu bar, press Practice, and start typing a drill aimed at your weak letters">
+        <img class="f on" src="assets/demo-1.webp" alt="" width="1800" height="1169">
+        <img class="f" src="assets/demo-2.webp" alt="" width="1800" height="1169" loading="lazy">
+        <img class="f" src="assets/demo-3.webp" alt="" width="1800" height="1169" loading="lazy">
+        <div class="press"></div>
+        <div class="dim"></div>
+        <div class="drill"></div>
+        <svg class="cur" viewBox="0 0 20 28" aria-hidden="true"><path d="M3 2l14 11.5-6.3.6 3.6 7.8-2.9 1.3-3.5-7.8L3 19.8z" fill="#fff" stroke="#1d1d1f" stroke-width="1.4" stroke-linejoin="round"/></svg>
+        <div class="end">
+          <img src="assets/wordmark.png" alt="fumble" width="680" height="293">
+          <p><b>F</b> for Fumble. <b>F</b> for free.</p>
+          <a href="https://github.com/alexiscodingbits/Fumble/releases/latest/download/Fumble.dmg">Download today <span>→</span></a>
+        </div>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -563,6 +604,58 @@ function runTTY() {
   })();
 }
 if (current === 3) runTTY();
+
+// ---------- TWO · the demo. A 14-second loop driven by a clock rather than timers, so it pauses
+// while the card is hidden and can be scrubbed. Download → the desk dims and a spotlight finds
+// the menu-bar icon → open → Practice → the drill gets typed → F for free.
+const scene = (() => {
+  const el = document.getElementById('scene');
+  const frames = [...el.querySelectorAll('.f')], dim = el.querySelector('.dim'), press = el.querySelector('.press');
+  const drill = el.querySelector('.drill'), cur = el.querySelector('.cur'), end = el.querySelector('.end');
+  const LOOP = 14.4, RESET = 13.8;
+  // pointer waypoints [time, x%, y%]: in from the bottom, the Download button, the menu-bar icon, Practice, then parked
+  const WAY = [[0, 64, 104], [0.7, 64, 104], [1.75, 50, 68.2], [2.7, 50, 68.2], [3.85, 82.1, 1.8], [4.6, 82.1, 1.8], [5.45, 90.1, 23.3], [6.1, 90.1, 23.3], [7.0, 76, 74]];
+  const CLICKS = [1.8, 3.9, 5.5];
+  const LINES = ['intent eat ten note tea one intention none ', 'eaten neat initiate net tie nine tone ', 'inane toe attention ate toe ate none none ', 'ate nine'];
+  const TYPE_FROM = 6.6, TYPE_TO = 9.8, TYPED = 38;
+  const ease = x => x < .5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+  const fade = (t, a, b) => Math.max(0, Math.min(1, (t - a) / (b - a)));
+  const dots = s => s.replace(/ /g, '<i>·</i>');
+  let shown = -1;
+  function pointer(t) {
+    let i = 0; while (i < WAY.length - 2 && t >= WAY[i + 1][0]) i++;
+    const [t0, x0, y0] = WAY[i], [t1, x1, y1] = WAY[i + 1], p = ease(fade(t, t0, t1));
+    return [x0 + (x1 - x0) * p, y0 + (y1 - y0) * p];
+  }
+  function at(t) {
+    const u = t >= RESET ? 0 : t;   // under the fading end card the desk is already reset for the next pass
+    frames[1].style.opacity = fade(u, 3.95, 4.25);
+    frames[2].style.opacity = fade(u, 5.55, 5.85);
+    press.style.opacity = u > 1.78 && u < 2.1 ? .22 : 0;
+    dim.style.opacity = fade(u, 2.15, 2.75) * (1 - fade(u, 3.88, 4.15));
+    const [x, y] = pointer(u), down = CLICKS.some(c => u >= c && u < c + .14);
+    cur.style.transform = `translate(${x - .24}cqw, ${y * 1169 / 1800 - .12}cqw) scale(${down ? .82 : 1})`;
+    cur.style.opacity = 1 - fade(t, 10.4, 11);
+    drill.style.opacity = fade(u, 5.7, 5.9);
+    const n = u < 5.7 ? -1 : Math.floor(fade(u, TYPE_FROM, TYPE_TO) * TYPED);
+    if (n !== shown) {
+      shown = n; const first = LINES[0], k = Math.max(0, n);
+      drill.innerHTML = `<b>${dots(first.slice(0, k))}</b><span class="k"></span>${dots(first.slice(k))}\n${LINES.slice(1).map(dots).join('\n')}`;
+    }
+    end.style.opacity = fade(t, 10.4, 11) * (1 - fade(t, RESET, LOOP));
+  }
+  let clock = 0, last = null;
+  function tick(now) {
+    if (cards[1].classList.contains('on')) { if (last !== null) clock = (clock + (now - last) / 1000) % LOOP; at(clock); }
+    last = now;
+    requestAnimationFrame(tick);
+  }
+  if (STILL) at(9.9); else requestAnimationFrame(tick);
+  return { seek(t) { clock = t; at(t); } };
+})();
+
+// ---------- ONE · "Free" jumps out a second after the page opens
+setTimeout(() => document.querySelector('.free').classList.add('go'), 1000);
 
 // ---------- Copy the brew command (only on click)
 document.getElementById('copy').addEventListener('click', async e => {
