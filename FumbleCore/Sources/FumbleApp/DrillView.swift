@@ -47,7 +47,11 @@ struct DrillView: View {
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear { startSession() }
-        .onReceive(ticker) { _ in now = ProcessInfo.processInfo.systemUptime }
+        .onReceive(ticker) { _ in
+            now = ProcessInfo.processInfo.systemUptime
+            restartIfIdle()
+            claimFocusIfWindowIsKey()
+        }
     }
 
     // MARK: - Header (live session stats)
@@ -77,6 +81,7 @@ struct DrillView: View {
             focusLine
             drillText
                 .focusable()
+                .focusEffectDisabled()
                 .focused($focused)
                 .onKeyPress(phases: .down) { press in handle(press) }
             Text(focused ? hintText : "Click here, then type.")
@@ -115,24 +120,19 @@ struct DrillView: View {
     }
 
     private var drillText: some View {
-        Text(TypingText.render(
-            target: drill.target, statuses: drill.statuses,
+        TypingTextView(
+            target: drill.target, statuses: drill.statuses, cursor: drill.cursor,
             showWhitespaceDots: coordinator.showWhitespaceDots,
             cursorStyle: coordinator.cursorStyle
-        ))
-            .font(.system(size: 22, design: .monospaced))
-            .lineSpacing(8)
+        )
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
-            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+            .background(Theme.surfaceBackground, in: RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.08)))
+            // Error flash only — see TrainerView for why focus doesn't draw a ring.
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(
-                        errorFlash ? Color.red.opacity(0.8)
-                            : focused ? Color.accentColor.opacity(0.6) : .clear,
-                        lineWidth: 2
-                    )
+                    .strokeBorder(errorFlash ? Color.red.opacity(0.8) : .clear, lineWidth: 2)
             )
             .animation(.easeOut(duration: 0.15), value: errorFlash)
     }
@@ -214,6 +214,26 @@ struct DrillView: View {
             loadNextPassage()
         }
         return .handled
+    }
+
+    /// See TrainerView.restartIfIdle — same rule: 10s idle mid-passage restarts the same passage.
+    private func restartIfIdle() {
+        guard let last = lastKeystrokeStamp, drill.cursor > 0, !drill.isComplete,
+              now - last >= Self.idleRestartSeconds else { return }
+        drill = DrillState(target: String(drill.target), errorHandling: drill.errorHandling)
+        passageActiveSeconds = 0
+        lastKeystrokeStamp = nil
+    }
+    private static let idleRestartSeconds: Double = 10
+
+    /// Type-anywhere: the moment the practice window is key, the typing surface holds focus.
+    /// `focused = true` in onAppear alone isn't enough — on first show the sidebar list takes
+    /// first responder, and the intro sheet steals it on a fresh install — so the ticker keeps
+    /// re-asserting. Skipped while a sheet is up (it's the key window then) and when another
+    /// window is in front. There are no other text inputs on this pane, so nothing is stolen.
+    private func claimFocusIfWindowIsKey() {
+        guard !focused, let window = NSApp.keyWindow, !window.isSheet else { return }
+        focused = true
     }
 
     private func startSession() {

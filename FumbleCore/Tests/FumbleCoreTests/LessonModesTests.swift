@@ -21,7 +21,7 @@ struct WordListEnglishTests {
     @Test("is strictly lowercase a-z")
     func strictlyLowercaseAZ() {
         let allowed = Set("abcdefghijklmnopqrstuvwxyz")
-        for word in WordList.english {
+        for word in WordList.english(spelling: .us) + WordList.english(spelling: .uk) {
             #expect(word.allSatisfy { allowed.contains($0) },
                     "“\(word)” contains a character outside a-z")
         }
@@ -34,7 +34,20 @@ struct WordListEnglishTests {
 
     @Test("is a large pool")
     func size() {
-        #expect((800...1000).contains(WordList.english.count))
+        #expect((9_000...14_000).contains(WordList.english.count))
+    }
+
+    @Test("US and UK pools carry their own spellings and none of the other's")
+    func regionalSpellings() {
+        let us = Set(WordList.english(spelling: .us))
+        let uk = Set(WordList.english(spelling: .uk))
+        for (american, british) in [("color", "colour"), ("organize", "organise"),
+                                    ("center", "centre"), ("gray", "grey")] {
+            #expect(us.contains(american) && !us.contains(british), "\(american)/\(british) in US pool")
+            #expect(uk.contains(british) && !uk.contains(american), "\(american)/\(british) in UK pool")
+        }
+        // Shared words are in both; the pools differ only by the spelling variants.
+        #expect(us.contains("keyboard") && uk.contains("keyboard"))
     }
 
     @Test("covers the rare letters with real words")

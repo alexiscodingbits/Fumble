@@ -30,6 +30,26 @@ struct DrillGeneratorTests {
         #expect(produced.allSatisfy { ["alpha", "bravo", "charlie", "delta"].contains(String($0)) })
     }
 
+    @Test("no word repeats within a lesson while the pool has unused words")
+    func noRepeats() {
+        let pool = (0..<40).map { "word\($0)" }
+        let generator = DrillGenerator(words: pool)
+        for seed in UInt64(1)...20 {
+            var rng = SeededRNG(seed: seed)
+            let words = generator.generate(targets: .init(), wordCount: 30, using: &rng).split(separator: " ")
+            #expect(Set(words).count == words.count)
+        }
+    }
+
+    @Test("a pool smaller than the lesson cycles through every word before repeating")
+    func exhaustedPoolCycles() {
+        let generator = DrillGenerator(words: ["alpha", "bravo", "charlie"])
+        var rng = SeededRNG(seed: 2)
+        let words = generator.generate(targets: .init(), wordCount: 6, using: &rng).split(separator: " ")
+        #expect(Set(words.prefix(3)).count == 3)
+        #expect(Set(words.suffix(3)).count == 3)
+    }
+
     @Test("scores words by the weak keys they contain")
     func scoresKeys() {
         let generator = DrillGenerator()
@@ -52,18 +72,23 @@ struct DrillGeneratorTests {
 
     @Test("weak-heavy words are sampled more often than neutral ones")
     func weightingSkewsSampling() {
-        // Pool: one word full of the weak key, several without.
-        let generator = DrillGenerator(words: ["zzz", "aaa", "bbb", "ccc", "ddd"])
+        // Pool: one word full of the weak key among many without. Lessons are shorter than the
+        // pool (sampling is without replacement), so the skew shows up as how often the weak
+        // word makes it into a lesson at all.
+        let neutral = (0..<40).map { "n\($0)" }
+        let generator = DrillGenerator(words: ["zzz"] + neutral)
         let targets = DrillGenerator.Targets(keyCodes: [keyCode("z")])
-        var rng = SeededRNG(seed: 42)
-        let drill = generator.generate(targets: targets, wordCount: 200, using: &rng)
-        let counts = drill.split(separator: " ").reduce(into: [String: Int]()) { $0[String($1), default: 0] += 1 }
-
-        // "zzz" scores 3 (weight 4) vs 1 for the others, so it should dominate — appear more
-        // than any single neutral word by a clear margin.
-        let z = counts["zzz"] ?? 0
-        let maxNeutral = ["aaa", "bbb", "ccc", "ddd"].map { counts[$0] ?? 0 }.max() ?? 0
-        #expect(z > maxNeutral)
+        var zLessons = 0
+        var neutralLessons = 0
+        for seed in UInt64(1)...200 {
+            var rng = SeededRNG(seed: seed)
+            let words = Set(generator.generate(targets: targets, wordCount: 8, using: &rng).split(separator: " "))
+            if words.contains("zzz") { zLessons += 1 }
+            if words.contains("n0") { neutralLessons += 1 }
+        }
+        // "zzz" scores 3 (weight 4) vs 1 for a neutral word, so it should appear in clearly
+        // more lessons than any single neutral word.
+        #expect(zLessons > neutralLessons * 2)
     }
 
     @Test("no targets gives an unweighted but valid drill")

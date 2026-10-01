@@ -1,3 +1,4 @@
+import FumbleCore
 import FumbleUI
 import SwiftUI
 
@@ -30,6 +31,12 @@ struct SettingsPaneView: View {
     private var cursorStyle: Binding<CursorStyle> {
         Binding(get: { coordinator.cursorStyle }, set: { coordinator.cursorStyle = $0 })
     }
+    private var spelling: Binding<WordList.Spelling> {
+        Binding(get: { coordinator.spelling }, set: { coordinator.spelling = $0 })
+    }
+    private var lessonWords: Binding<Double> {
+        Binding(get: { Double(coordinator.lessonWordCount) }, set: { coordinator.lessonWordCount = Int($0) })
+    }
     private var goalMinutes: Binding<Double> {
         Binding(get: { Double(coordinator.dailyGoalMinutes) }, set: { coordinator.dailyGoalMinutes = Int($0) })
     }
@@ -46,10 +53,24 @@ struct SettingsPaneView: View {
                         Spacer()
                         Text("\(Int(coordinator.targetWPM)) WPM").monospacedDigit().foregroundStyle(.secondary)
                     }
-                    Slider(value: targetWPM, in: 15...120, step: 5)
+                    Slider(value: targetWPM, in: 15...200, step: 5)
                     Text("A letter is 'mastered' — and the next unlocks — once you reach this speed on it.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                VStack(alignment: .leading) {
+                    HStack {
+                        Text("Lesson length")
+                        Spacer()
+                        Text("\(coordinator.lessonWordCount) words").monospacedDigit().foregroundStyle(.secondary)
+                    }
+                    Slider(value: lessonWords, in: 10...100, step: 5)
+                    Text("Words per lesson in Trainer, Weak spots and Custom text. Applies from the next lesson.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Picker("Spelling", selection: spelling) {
+                    ForEach(WordList.Spelling.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
                 Toggle("Unlock a new letter only when every unlocked letter is above target",
                        isOn: strictUnlock)
                 Text("On: old letters can't quietly rot — the next letter waits until the whole set is at target. Off: mastering just the focused letter unlocks the next, which moves faster.")

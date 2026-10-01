@@ -80,6 +80,17 @@ public final class AppCoordinator {
         }
     }
     /// Daily practice goal in minutes; 0 = off. A reminder, never a limit.
+    /// US or UK spellings in the word pool. Persisted; read when the next lesson is generated.
+    public var spelling: WordList.Spelling {
+        didSet { UserDefaults.standard.set(spelling.rawValue, forKey: "spelling") }
+    }
+
+    /// Words per lesson for the word-based modes (trainer, weak spots, custom text). Read when
+    /// the next passage is generated, so a change lands on the next lesson.
+    public var lessonWordCount: Int {
+        didSet { UserDefaults.standard.set(lessonWordCount, forKey: "lessonWordCount") }
+    }
+
     public var dailyGoalMinutes: Int {
         didSet { UserDefaults.standard.set(dailyGoalMinutes, forKey: "dailyGoalMinutes") }
     }
@@ -154,8 +165,14 @@ public final class AppCoordinator {
         self.soundVolume = defaults.object(forKey: "soundVolume") != nil ? defaults.double(forKey: "soundVolume") : 0.5
         self.showWhitespaceDots = defaults.object(forKey: "showWhitespaceDots") != nil
             ? defaults.bool(forKey: "showWhitespaceDots") : true
-        self.cursorStyle = defaults.string(forKey: "cursorStyle").flatMap(CursorStyle.init(rawValue:)) ?? .block
+        self.cursorStyle = defaults.string(forKey: "cursorStyle").flatMap(CursorStyle.init(rawValue:)) ?? .line
         self.appearance = defaults.string(forKey: "appearance").flatMap(AppearanceMode.init(rawValue:)) ?? .system
+        // Default spelling from the system region: UK-style for the UK, Ireland, Australia and
+        // New Zealand; US otherwise. Overridable in Settings.
+        self.spelling = defaults.string(forKey: "spelling").flatMap(WordList.Spelling.init(rawValue:))
+            ?? (["GB", "IE", "AU", "NZ"].contains(Locale.current.region?.identifier ?? "") ? .uk : .us)
+        self.lessonWordCount = defaults.object(forKey: "lessonWordCount") != nil
+            ? defaults.integer(forKey: "lessonWordCount") : 25
         self.dailyGoalMinutes = defaults.object(forKey: "dailyGoalMinutes") != nil
             ? defaults.integer(forKey: "dailyGoalMinutes") : 15
         // Custom text lives as a file in the data directory (see customPracticeText). A one-time
@@ -501,7 +518,8 @@ public final class AppCoordinator {
     /// Targets combine BOTH weakness signals from real typing: slow keys/transitions (latency)
     /// and mistype-prone keys (the ones you backspace most). A key can be fast but sloppy —
     /// accuracy problems deserve drilling as much as speed problems.
-    public func makeDrill(wordCount: Int = 30) -> DrillPlan {
+    public func makeDrill(wordCount: Int? = nil) -> DrillPlan {
+        let wordCount = wordCount ?? lessonWordCount
         let best = bestAnalysis()
         var targets = best.map { DrillGenerator.Targets(analysis: $0.analysis) } ?? DrillGenerator.Targets()
 
@@ -516,7 +534,7 @@ public final class AppCoordinator {
         // The drill pool merges both lists: `common` carries the programmer-ish words (commit,
         // struct, rebase), `english` the breadth. Order-preserving dedup keeps generation stable.
         var seen = Set<String>()
-        let pool = (WordList.common + WordList.english).filter { seen.insert($0).inserted }
+        let pool = (WordList.common + WordList.english(spelling: spelling)).filter { seen.insert($0).inserted }
         let text = DrillGenerator(words: pool).generate(targets: targets, wordCount: wordCount, using: &rng)
 
         // Focus labels: the weak keys and transitions this drill leans on, for display.

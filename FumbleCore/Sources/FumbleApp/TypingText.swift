@@ -1,3 +1,4 @@
+import AppKit
 import FumbleUI
 import SwiftUI
 
@@ -14,8 +15,61 @@ enum CursorStyle: String, CaseIterable, Identifiable {
     }
 }
 
-/// Renders a drill target as an AttributedString: one place for the colour scheme, whitespace
-/// dots, and cursor style, shared by every practice surface (trainer, drills, future modes).
+/// The drill text, shared by every practice surface (trainer, drills, future modes).
+///
+/// Wraps itself in whole monospaced columns (`TypingLayout`) so the `.line` caret can be a real
+/// monkeytype bar: it sits *between* characters, slides as you type, and the character after it
+/// stays grey until it's actually pressed.
+struct TypingTextView: View {
+    let target: [Character]
+    let statuses: [DrillState.CharStatus]
+    let cursor: Int
+    let showWhitespaceDots: Bool
+    let cursorStyle: CursorStyle
+
+    @State private var width: CGFloat = 0
+
+    private static let lineGap: CGFloat = 8
+    private static let nsFont = NSFont.monospacedSystemFont(ofSize: 22, weight: .regular)
+    private static let charWidth = ("M" as NSString).size(withAttributes: [.font: nsFont]).width
+    private static let lineHeight = ceil(nsFont.ascender - nsFont.descender + nsFont.leading)
+
+    var body: some View {
+        // One column spare: a line-ending space may overhang by one (see `TypingLayout.wrap`).
+        let columns = width > 0 ? max(Int(width / Self.charWidth) - 1, 8) : 60
+        let lines = TypingLayout.wrap(target, columns: columns)
+        VStack(alignment: .leading, spacing: Self.lineGap) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, range in
+                Text(TypingText.render(target: target, statuses: statuses, range: range,
+                                       showWhitespaceDots: showWhitespaceDots, cursorStyle: cursorStyle))
+                    .font(Font(Self.nsFont as CTFont))
+                    .fixedSize()
+                    .frame(height: Self.lineHeight, alignment: .leading)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: Self.lineHeight, alignment: .topLeading)
+        .overlay(alignment: .topLeading) {
+            if cursorStyle == .line { caret(at: TypingLayout.caret(cursor: cursor, in: lines)) }
+        }
+        .background(GeometryReader { proxy in
+            Color.clear
+                .onAppear { width = proxy.size.width }
+                .onChange(of: proxy.size.width) { _, new in width = new }
+        })
+    }
+
+    private func caret(at position: TypingLayout.Position) -> some View {
+        RoundedRectangle(cornerRadius: 1.5)
+            .fill(Theme.fumbleOrange)
+            .frame(width: 2.5, height: Self.lineHeight * 0.85)
+            .offset(x: CGFloat(position.column) * Self.charWidth - 1.25,
+                    y: CGFloat(position.line) * (Self.lineHeight + Self.lineGap) + Self.lineHeight * 0.075)
+            .animation(.easeOut(duration: 0.09), value: position)
+    }
+}
+
+/// Renders one line of a drill target as an AttributedString: the colour scheme, whitespace
+/// dots, and the block/underline cursor styles.
 enum TypingText {
 
     /// - Parameter showWhitespaceDots: draw spaces as `·` (keybr's "bullet whitespace").
@@ -23,43 +77,38 @@ enum TypingText {
     static func render(
         target: [Character],
         statuses: [DrillState.CharStatus],
+        range: Range<Int>,
         showWhitespaceDots: Bool,
         cursorStyle: CursorStyle
     ) -> AttributedString {
         var result = AttributedString()
-        for (index, character) in target.enumerated() {
-            // The dot replacement has a layout trap: '·' is not whitespace, so a dotted line
-            // contains no legal break points and the engine falls back to breaking anywhere —
-            // splitting words across lines. A zero-width space after each dot restores a break
-            // opportunity exactly where the real space was (the dot stays with the preceding
-            // word at a line end, which is also how keybr renders it). It's invisible and,
-            // being part of this piece, doesn't disturb the status-index mapping.
-            let display: String = (character == " " && showWhitespaceDots) ? "·\u{200B}" : String(character)
-            var piece = AttributedString(display)
+        for index in range {
+            let character = target[index]
+            let dotted = character == " " && showWhitespaceDots
+            var piece = AttributedString(dotted ? "·" : String(character))
             switch statuses[index] {
             case .pending:
-                piece.foregroundColor = .secondary.opacity(character == " " && showWhitespaceDots ? 0.35 : 0.5)
+                piece.foregroundColor = Theme.untypedText.opacity(dotted ? 0.6 : 1)
             case .correct:
-                piece.foregroundColor = character == " " && showWhitespaceDots
-                    ? .secondary.opacity(0.6)   // typed dots recede so words stay readable
+                piece.foregroundColor = dotted
+                    ? Theme.untypedText.opacity(0.8)   // typed dots recede so words stay readable
                     : .primary
             case .incorrect:
                 piece.foregroundColor = .red
                 if character == " " { piece.underlineStyle = .single }
             case .current:
-                piece.foregroundColor = .primary
                 switch cursorStyle {
                 case .block:
-                    piece.backgroundColor = .accentColor.opacity(0.35)
+                    piece.foregroundColor = .primary
+                    piece.backgroundColor = Theme.fumbleOrange.opacity(0.35)
                 case .underline:
+                    piece.foregroundColor = .primary
                     piece.underlineStyle = .single
-                    piece.underlineColor = NSColor.controlAccentColor
+                    piece.underlineColor = NSColor(Theme.fumbleOrange)
                 case .line:
-                    // A thin marker before the character: approximate with a leading bar glyph
-                    // is ugly; instead tint the character itself so position stays obvious.
-                    piece.foregroundColor = Color.accentColor
-                    piece.underlineStyle = .single
-                    piece.underlineColor = NSColor.controlAccentColor.withAlphaComponent(0.4)
+                    // The bar caret is drawn by `TypingTextView`; the character stays untyped-grey
+                    // until it's pressed, as in monkeytype.
+                    piece.foregroundColor = Theme.untypedText.opacity(dotted ? 0.6 : 1)
                 }
             }
             result += piece

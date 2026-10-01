@@ -79,21 +79,26 @@ public struct DrillGenerator {
     ) -> String {
         guard wordCount > 0, !words.isEmpty else { return "" }
 
-        let weights = words.map { 1 + (targets.isEmpty ? 0 : score($0, targets: targets)) }
-        let totalWeight = weights.reduce(0, +)
+        let baseWeights = words.map { 1 + (targets.isEmpty ? 0 : score($0, targets: targets)) }
+        // Sampling WITHOUT replacement: a word's weight drops to zero once picked, so no word
+        // appears twice in a lesson while the pool has anything left. "sequence" three times
+        // in fifteen words reads as a bug, not a drill. Only when every word has been used
+        // (pool smaller than the lesson) do the weights reset and repeats begin.
+        var weights = baseWeights
+        var totalWeight = weights.reduce(0, +)
 
         var picked: [String] = []
         picked.reserveCapacity(wordCount)
-        var lastIndex = -1
 
         for _ in 0..<wordCount {
-            var index = weightedIndex(weights: weights, total: totalWeight, using: &rng)
-            // Avoid an immediate repeat where the pool allows it — reads better, drills wider.
-            if index == lastIndex, words.count > 1 {
-                index = weightedIndex(weights: weights, total: totalWeight, using: &rng)
+            if totalWeight == 0 {
+                weights = baseWeights
+                totalWeight = weights.reduce(0, +)
             }
+            let index = weightedIndex(weights: weights, total: totalWeight, using: &rng)
             picked.append(words[index])
-            lastIndex = index
+            totalWeight -= weights[index]
+            weights[index] = 0
         }
         return picked.joined(separator: " ")
     }

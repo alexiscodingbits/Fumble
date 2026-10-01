@@ -16,12 +16,20 @@ public final class KeyboardTrainer {
     public struct Config: Sendable, Equatable {
         /// WPM at which a letter counts as "mastered" (confidence 1). keybr's default is 35.
         public var targetWPM: Double = 35
-        /// WPM mapped to confidence 0. Below this a key is as weak as the bar shows.
+        /// Starting estimate for a key with no data — where the first drill sample blends from.
         public var floorWPM: Double = 12
+        /// Fraction of the target that maps to confidence 0. The colour ramp spans only the
+        /// top half of the target, so "half your target" reads red at ANY target. Anchoring 0
+        /// to the fixed `floorWPM` instead made a 120 target paint 85-WPM keys (70% of the
+        /// way there) yellow-green — the board looked nearly done when it wasn't close.
+        public var rampStartFraction: Double = 0.5
         /// Never present fewer than this many letters, so early practice isn't one lonely key.
         public var minimumUnlocked: Int = 6
-        /// How much a fresh drill result moves a key's running confidence (0–1). Low = smooth.
-        public var blend: Double = 0.35
+        /// How many recent raw samples the confidence signal is the median of. A median, not a
+        /// moving average: one lesson where a letter only appeared in fast rolls ("in", "an")
+        /// produced a 150-WPM sample that dragged an average up 25 WPM and painted the key
+        /// green. Eight lessons is long enough to be stable, short enough to reflect this month.
+        public var confidenceWindow: Int = 8
         /// keybr's "unlock a next key only when the previous keys are also above the target
         /// speed". True (default): the next letter unlocks only when EVERY unlocked letter is
         /// at target — slower, but old letters can't quietly rot. False: reaching target on
@@ -78,12 +86,14 @@ public final class KeyboardTrainer {
 
     public var unlockedKeys: [KeyIdentity] { Array(alphabet.prefix(unlockedCount)) }
 
-    /// 0…1 progress bar value for a key. Unknown keys read as floor (0).
+    /// 0…1 progress toward the target: 0 at `rampStartFraction` of the target or below, 1 at
+    /// target. Unknown keys read as 0.
     public func confidence(for key: KeyIdentity) -> Double {
-        let w = wpm[key.keyCode] ?? config.floorWPM
-        let range = config.targetWPM - config.floorWPM
+        guard let w = wpm[key.keyCode] else { return 0 }
+        let start = config.targetWPM * config.rampStartFraction
+        let range = config.targetWPM - start
         guard range > 0 else { return w >= config.targetWPM ? 1 : 0 }
-        return min(max((w - config.floorWPM) / range, 0), 1)
+        return min(max((w - start) / range, 0), 1)
     }
 
     public func isMastered(_ key: KeyIdentity) -> Bool { confidence(for: key) >= 1 }
@@ -141,17 +151,18 @@ public final class KeyboardTrainer {
     // MARK: - Progression
 
     /// Fold a completed drill's measured per-key WPM into the running confidence, then unlock the
-    /// next letter if everything currently shown is mastered. Every measured key also gets its
-    /// RAW sample appended to the telemetry history — the blend applies only to the unlock signal.
+    /// next letter if everything currently shown is mastered. Every measured key gets its RAW
+    /// sample appended to the telemetry history; the confidence signal is then re-derived as the
+    /// median of the recent window (see `confidenceWindow`).
     public func record(perKeyWPM: [Int: Double]) {
         let focusBefore = focusKey
         // The `sample > 0` guard covers history too: a non-positive WPM means "not actually
         // measured this lesson", and storing it would report a last speed of 0 and drag the
         // learning rate — nil/absent, not zero, is how we say "unknown".
         for (keyCode, sample) in perKeyWPM where sample > 0 {
-            let previous = wpm[keyCode] ?? config.floorWPM
-            wpm[keyCode] = previous + (sample - previous) * config.blend
+            let prior = wpm[keyCode]
             appendHistory(sample, for: keyCode)
+            wpm[keyCode] = robustEstimate(for: keyCode, prior: prior)
         }
         // Strict: every unlocked letter at target. Lenient (keybr's default semantics with the
         // option off): mastering just the focused letter is enough, even if older ones dipped.
@@ -161,6 +172,17 @@ public final class KeyboardTrainer {
         if unlockDue, unlockedCount < alphabet.count {
             unlockedCount += 1
         }
+    }
+
+    /// Median of the recent raw samples. While the window is thin (< 3 lessons) the prior value
+    /// — the capture seed, or the previous estimate — counts as one more sample, so a single
+    /// lucky lesson can't flip a key from red to green on its own.
+    private func robustEstimate(for keyCode: Int, prior: Double?) -> Double {
+        var window = Array((history[keyCode]?.samples ?? []).suffix(config.confidenceWindow))
+        if window.count < 3, let prior { window.append(prior) }
+        window.sort()
+        let n = window.count
+        return n % 2 == 1 ? window[n / 2] : (window[n / 2 - 1] + window[n / 2]) / 2
     }
 
     private func appendHistory(_ sample: Double, for keyCode: Int) {
@@ -224,6 +246,14 @@ public final class KeyboardTrainer {
         unlockedCount = min(alphabet.count, max(unlockedCount, snapshot.unlockedCount))
         for (keyCode, samples) in snapshot.samples {
             history[keyCode] = KeyHistory(samples: samples, top: snapshot.tops[keyCode] ?? samples.max() ?? 0)
+            // Re-derive the signal from the raw history once there's enough to stand alone,
+            // rather than trusting the stored value: the estimator has changed before (moving
+            // average → windowed median), and a stale stored number would keep painting a key
+            // green until it happened to be re-measured. Thin histories keep the stored value,
+            // which already folds in the seed.
+            if samples.count >= 3 {
+                wpm[keyCode] = robustEstimate(for: keyCode, prior: nil)
+            }
         }
     }
 }

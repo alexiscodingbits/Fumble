@@ -41,15 +41,26 @@ struct KeyboardTrainerTests {
         #expect(trainer.isMastered(KeyIdentity(keyCode: code("e"))))
     }
 
-    @Test("confidence maps WPM onto 0...1 against the target")
+    @Test("confidence maps WPM onto 0...1 across the top half of the target")
     func confidenceMapping() {
         var config = KeyboardTrainer.Config()
-        config.targetWPM = 35
-        config.floorWPM = 12
-        let trainer = KeyboardTrainer(seed: [code("e"): 35, code("t"): 12, code("a"): 23.5], config: config)
+        config.targetWPM = 40
+        let trainer = KeyboardTrainer(seed: [code("e"): 40, code("t"): 20, code("a"): 30, code("o"): 10], config: config)
         #expect(trainer.confidence(for: KeyIdentity(keyCode: code("e"))) == 1)
+        #expect(trainer.confidence(for: KeyIdentity(keyCode: code("t"))) == 0)   // half the target
+        #expect(trainer.confidence(for: KeyIdentity(keyCode: code("o"))) == 0)   // clamped
+        #expect(abs(trainer.confidence(for: KeyIdentity(keyCode: code("a"))) - 0.5) < 0.0001)
+        #expect(trainer.confidence(for: KeyIdentity(keyCode: code("z"))) == 0)   // unknown
+    }
+
+    @Test("a high target makes keys far below it read as weak, not nearly-done")
+    func highTargetReadsWeak() {
+        var config = KeyboardTrainer.Config()
+        config.targetWPM = 120
+        // 85 WPM is 71% of 120 — used to colour yellow-green off a fixed 12-WPM floor.
+        let trainer = KeyboardTrainer(seed: [code("e"): 85, code("t"): 60], config: config)
+        #expect(trainer.confidence(for: KeyIdentity(keyCode: code("e"))) < 0.45)
         #expect(trainer.confidence(for: KeyIdentity(keyCode: code("t"))) == 0)
-        #expect(abs(trainer.confidence(for: KeyIdentity(keyCode: code("a"))) - 0.5) < 0.02)
     }
 
     @Test("mastering every unlocked letter unlocks the next one")
@@ -88,15 +99,33 @@ struct KeyboardTrainerTests {
         #expect(trainer.unlockedCount == before)   // no unlock while one lags
     }
 
-    @Test("confidence updates as a smoothed running value, not a jump")
+    @Test("confidence is a median of recent lessons, not a jump to the latest")
     func smoothedConfidence() {
-        var config = KeyboardTrainer.Config()
-        config.blend = 0.3
-        let trainer = KeyboardTrainer(seed: [code("e"): 20], config: config)
+        let trainer = KeyboardTrainer(seed: [code("e"): 20])
         trainer.record(perKeyWPM: [code("e"): 40])
-        let w = trainer.wpm[code("e")]!
-        // 20 + (40-20)*0.3 = 26, not a jump to 40.
-        #expect(abs(w - 26) < 0.001)
+        // Thin window: the seed counts as a sample → median of {20, 40} = 30, not a jump to 40.
+        #expect(abs(trainer.wpm[code("e")]! - 30) < 0.001)
+    }
+
+    @Test("one lesson of fast rolls can't drag a key up to target")
+    func outlierLessonIgnored() {
+        var config = KeyboardTrainer.Config()
+        config.targetWPM = 120
+        let trainer = KeyboardTrainer(seed: [:], config: config)
+        for sample in [88.0, 90, 86, 92, 89] { trainer.record(perKeyWPM: [code("n"): sample]) }
+        trainer.record(perKeyWPM: [code("n"): 153])   // 'n' only appeared in "in"/"an" this time
+        let w = trainer.wpm[code("n")]!
+        #expect(w < 95)
+        #expect(!trainer.isMastered(KeyIdentity(keyCode: code("n"))))
+    }
+
+    @Test("confidence follows a sustained change, over the window")
+    func sustainedChangeFollowed() {
+        var config = KeyboardTrainer.Config()
+        config.confidenceWindow = 4
+        let trainer = KeyboardTrainer(seed: [code("e"): 20])
+        for _ in 0..<4 { trainer.record(perKeyWPM: [code("e"): 60]) }
+        #expect(trainer.wpm[code("e")]! == 60)
     }
 
     @Test("the whole alphabet can be completed")
@@ -143,6 +172,21 @@ struct TrainerLessonGeneratorTests {
             )
             let words = text.split(separator: " ")
             #expect(words.allSatisfy { $0.contains("r") })
+        }
+    }
+
+    @Test("natural words don't repeat within a lesson while the pool allows")
+    func naturalNoRepeats() {
+        let unlocked = keys("etaoinsrhl")
+        let focus = KeyIdentity(keyCode: code("r"))
+        // 16 r-words available, 12 requested: every natural word must be distinct.
+        for seed in UInt64(1)...20 {
+            var rng = SeededRNG(seed: seed)
+            let text = TrainerLessonGenerator.generate(
+                unlocked: unlocked, focus: focus, wordCount: 12, naturalWords: rWords, using: &rng
+            )
+            let natural = text.split(separator: " ").filter { $0.count >= 6 }
+            #expect(Set(natural).count == natural.count)
         }
     }
 

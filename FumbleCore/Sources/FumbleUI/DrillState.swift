@@ -146,8 +146,10 @@ public struct DrillState: Equatable, Sendable {
     }
 
     /// Measured WPM per key code from this drill, for feeding the trainer's confidence. Median
-    /// reach per key → 12000 / median ms. Only keys with enough samples to be meaningful.
-    public func perKeyWPM(minimumSamples: Int = 2) -> [Int: Double] {
+    /// reach per key → 12000 / median ms. Only keys with enough samples to be meaningful: two
+    /// presses of a non-focus letter are usually the same fast digraph twice ("in", "in"), and
+    /// reporting that as the letter's speed is what made rarely-hit keys look mastered.
+    public func perKeyWPM(minimumSamples: Int = 4) -> [Int: Double] {
         var result: [Int: Double] = [:]
         for (keyCode, samples) in perKeyIntervals where samples.count >= minimumSamples {
             let sorted = samples.sorted()

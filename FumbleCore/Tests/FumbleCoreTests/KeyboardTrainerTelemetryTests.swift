@@ -24,7 +24,7 @@ struct KeyboardTrainerTelemetryTests {
         trainer.record(perKeyWPM: [code("e"): 30])
         trainer.record(perKeyWPM: [code("e"): 54.1])
         trainer.record(perKeyWPM: [code("e"): 36.3])
-        #expect(trainer.lastWPM(for: key("e")) == 36.3)   // raw, not the blended `wpm` value
+        #expect(trainer.lastWPM(for: key("e")) == 36.3)   // raw, not the robust `wpm` estimate
         #expect(trainer.topWPM(for: key("e")) == 54.1)    // max survives a slower follow-up
         #expect(trainer.sampleCount(for: key("e")) == 3)
     }
@@ -82,14 +82,12 @@ struct KeyboardTrainerTelemetryTests {
         #expect(trainer.sampleCount(for: key("t")) == 0)
     }
 
-    @Test("telemetry rides along without changing the blended confidence update")
+    @Test("telemetry keeps the raw sample while the confidence signal is the robust estimate")
     func confidenceUpdateUnchanged() {
-        var config = KeyboardTrainer.Config()
-        config.blend = 0.3
-        let trainer = KeyboardTrainer(seed: [code("e"): 20], config: config)
+        let trainer = KeyboardTrainer(seed: [code("e"): 20])
         trainer.record(perKeyWPM: [code("e"): 40])
-        // The unlock signal still blends (20 + (40-20)*0.3 = 26) while history keeps the raw 40.
-        #expect(abs(trainer.wpm[code("e")]! - 26) < 0.001)
+        // The unlock signal is the median of {seed 20, 40} = 30 while history keeps the raw 40.
+        #expect(abs(trainer.wpm[code("e")]! - 30) < 0.001)
         #expect(trainer.lastWPM(for: key("e")) == 40)
     }
 
@@ -138,7 +136,7 @@ struct KeyboardTrainerSnapshotTests {
     @Test("restore folds in fresh capture seed for never-drilled keys, snapshot wins elsewhere")
     func seedMerging() {
         let original = KeyboardTrainer(seed: [code("e"): 20])
-        original.record(perKeyWPM: [code("e"): 40])   // lesson-earned: e blended upward
+        original.record(perKeyWPM: [code("e"): 40])   // lesson-earned: e estimate moves upward
         let snapshot = original.snapshot()
 
         // Fresh capture says e is 25 (stale vs lessons) and adds a never-drilled key o at 60.

@@ -61,14 +61,17 @@ public enum TrainerLessonGenerator {
 
         var words: [String] = []
         words.reserveCapacity(wordCount)
-        var lastWord: String?
+        // Every word used so far: a real word appears at most once per lesson while its pool
+        // has unused entries left (see `naturalWord`). Pseudo-words are random enough not to
+        // need it, but they're recorded too so a natural pick can't echo one.
+        var used = Set<String>()
 
         for _ in 0..<wordCount {
             let natural = naturalShare > 0 && Double.random(in: 0..<1, using: &rng) < naturalShare
             let word: String
             if natural {
                 word = naturalWord(
-                    focusPool: focusPool, plainPool: plainPool, avoiding: lastWord, using: &rng
+                    focusPool: focusPool, plainPool: plainPool, used: used, using: &rng
                 )
             } else {
                 word = pseudoWord(
@@ -78,7 +81,7 @@ public enum TrainerLessonGenerator {
             }
             if !word.isEmpty {
                 words.append(word)
-                lastWord = word
+                used.insert(word)
             }
         }
         return words.joined(separator: " ")
@@ -88,19 +91,18 @@ public enum TrainerLessonGenerator {
     /// every word in a lesson for B contains a b. Thin pools are handled upstream
     /// (naturalShare blends in pseudo-words as the focus pool shrinks), so rare letters don't
     /// degenerate into a litany of the same three words.
+    ///
+    /// Draws from the words not yet `used` this lesson; only once the whole pool has been
+    /// used does it fall back to the full pool and allow a repeat.
     private static func naturalWord<R: RandomNumberGenerator>(
         focusPool: [String],
         plainPool: [String],
-        avoiding lastWord: String?,
+        used: Set<String>,
         using rng: inout R
     ) -> String {
         let pool = focusPool.isEmpty ? plainPool : focusPool
-        guard var word = pool.randomElement(using: &rng) else { return "" }
-        // One redraw avoids most immediate repeats without stalling on thin pools.
-        if word == lastWord, pool.count > 1 {
-            word = pool.randomElement(using: &rng) ?? word
-        }
-        return word
+        let fresh = pool.filter { !used.contains($0) }
+        return (fresh.isEmpty ? pool : fresh).randomElement(using: &rng) ?? ""
     }
 
     /// The original keybr-style generator: one pronounceable pseudo-word from the unlocked

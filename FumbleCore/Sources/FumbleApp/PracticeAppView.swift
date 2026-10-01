@@ -72,11 +72,14 @@ struct PracticeAppView: View {
                 .help("Fumble is free — this is the tip jar")
             }
         } detail: {
-            switch pane {
-            case .practice: practicePane.id(coordinator.dataEpoch)
-            case .stats: StatsPaneView(coordinator: coordinator)
-            case .settings: SettingsPaneView(coordinator: coordinator)
+            Group {
+                switch pane {
+                case .practice: practicePane.id(coordinator.dataEpoch)
+                case .stats: StatsPaneView(coordinator: coordinator)
+                case .settings: SettingsPaneView(coordinator: coordinator)
+                }
             }
+            .background(Theme.windowBackground)
         }
         // Fixed size: the content is fixed-layout (keyboard, lists, typing box), so a resizable
         // window just manufactures dead space. Fixed-size is a normal pattern for compact Mac
@@ -260,8 +263,8 @@ struct CustomTextPracticeView: View {
                     guard !words.isEmpty else {
                         return DrillPlan(text: "add some custom text first", focus: [])
                     }
-                    // A random ~30-word window, so long texts get varied passages.
-                    let window = 30
+                    // A random lesson-length window, so long texts get varied passages.
+                    let window = coordinator.lessonWordCount
                     let start = words.count > window
                         ? Int.random(in: 0...(words.count - window), using: &rng) : 0
                     let slice = words[start..<min(start + window, words.count)]

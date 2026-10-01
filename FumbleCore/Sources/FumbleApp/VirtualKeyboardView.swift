@@ -1,3 +1,4 @@
+import AppKit
 import FumbleCore
 import SwiftUI
 
@@ -59,8 +60,12 @@ struct VirtualKeyboardView: View {
 enum SkillColor {
     static func color(_ value: Double) -> Color {
         let v = min(max(value, 0), 1)
-        // Hue 0 (red) → 0.33 (green).
-        return Color(hue: 0.33 * v, saturation: 0.72, brightness: 0.85)
+        // Hue 0 (red) → 0.33 (green). Dark mode mutes the ramp: the light-mode saturation
+        // glows like traffic lights against monkeytype grey.
+        return Color(nsColor: Theme.dynamic(
+            light: NSColor(hue: 0.33 * v, saturation: 0.72, brightness: 0.85, alpha: 1),
+            dark: NSColor(hue: 0.33 * v, saturation: 0.40, brightness: 0.58, alpha: 1)
+        ))
     }
 
     static let locked = Color.secondary.opacity(0.18)
