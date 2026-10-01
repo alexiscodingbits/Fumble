@@ -32,6 +32,14 @@ trap 'rm -rf "$STAGE"' EXIT
 ditto "dist/Fumble.app" "$STAGE/Fumble.app"
 ln -s /Applications "$STAGE/Applications"
 
+# Finder layout: background with the drag arrow + pinned icon positions. Both files are
+# committed; regenerate with scripts/make-dmg-background.swift + scripts/make-dmg-layout.sh
+# when the layout changes. The .DS_Store references the background by path on the mounted
+# volume, so the volname below and .background/background.png must not be renamed.
+mkdir "$STAGE/.background"
+cp packaging/dmg/background.png "$STAGE/.background/background.png"
+cp packaging/dmg/DS_Store "$STAGE/.DS_Store"
+
 mkdir -p dist
 rm -f "$DMG"
 hdiutil create \

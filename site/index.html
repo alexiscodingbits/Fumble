@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fumble — the typing coach that learns from your mistakes</title>
+<meta name="description" content="Fumble is a free, open-source macOS menu-bar app that watches how you type all day, finds the keys that actually cost you time, and drills exactly those. Entirely on-device.">
+<meta property="og:title" content="Fumble — the typing coach that learns from your mistakes">
+<meta property="og:description" content="Free, open-source macOS app that finds the keys costing you time — from your real typing, not synthetic drills. Entirely on-device.">
+<meta property="og:image" content="https://fumble.alexmcconnell.ie/assets/og.jpg">
+<meta property="og:url" content="https://fumble.alexmcconnell.ie">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<style>
+  :root {
+    --paper: #f3f2ef;       /* card one: off-white studio */
+    --blue: #a8d4ff;        /* card two: a lighter, sunnier keyboard blue */
+    --pink: #f8d6dd;        /* card three: baby pink */
+    --orange: #e97f3c;      /* the F, and every caret */
+    --orange-deep: #c2582b;
+    --navy: #1d2e4f;
+    --ink: #1d1d1f;
+    --sub: #6e6e73;
+    --mono: "SF Mono", ui-monospace, Menlo, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased; color: var(--ink); background: var(--paper); line-height: 1.5;
+  }
+  a { color: inherit; }
+  img { display: block; max-width: 100%; height: auto; }
+  code { font-family: var(--mono); }
+  ::selection { background: var(--orange); color: #fff; }
+
+  /* ---------- the deck: three cards stacked in the viewport, one showing ---------- */
+  #deck { position: fixed; inset: 0; perspective: 1400px; }
+  .card {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    padding: 72px 24px 96px; overflow: hidden; visibility: hidden;
+    transform-origin: 50% 60%; will-change: transform, opacity;
+  }
+  .card.on { visibility: visible; }
+  .hero { background: var(--paper); }
+  .two { background: var(--blue); }
+  .three { background: var(--pink); }
+  .four { background: #141416; color: #d6d6d0; }
+  .four .wrap { max-width: 760px; }
+  #tty { font: 500 clamp(13px, 1.25vw, 16px)/1.7 var(--mono); white-space: pre-wrap; color: #cfd2c8; }
+  #tty .p { color: var(--blue); }
+  #tty .g { color: #9ccc86; }
+  #tty .o { color: var(--orange); }
+  #tty .dim { color: #6f716c; }
+  #tty .cur { display: inline-block; width: .6em; height: 1.1em; vertical-align: -.2em; background: var(--orange); animation: blink 1s steps(1) infinite; }
+  #keys button.secret { background: linear-gradient(180deg, #3a3a3e, #1c1c1e); color: #cfd2c8; box-shadow: 0 4px 0 #000, 0 6px 10px rgba(0, 0, 0, .3); }
+
+  .card > canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; }
+  .card > .wrap { position: relative; z-index: 2; width: 100%; max-width: 1060px; max-height: 100%; overflow: auto; }
+  /* the outgoing card is a keycap being pressed: it sinks, darkens a touch, and the next card is typed in over it */
+  .card.press { transition: transform .38s cubic-bezier(.3, .7, .3, 1), filter .38s ease; transform: translateY(14px) scale(.985); filter: brightness(.93); }
+
+  /* ---------- nav: three keycaps ---------- */
+  #nav { position: fixed; left: 0; right: 0; bottom: 22px; z-index: 10; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  #keys { display: flex; gap: 8px; }
+  #keys button {
+    width: 42px; height: 42px; border: 0; border-radius: 9px; cursor: pointer;
+    font: 700 15px var(--mono); color: var(--ink);
+    background: linear-gradient(180deg, #ffffff, #e9e9ec); box-shadow: 0 4px 0 #b9b9bf, 0 6px 10px rgba(0, 0, 0, .15);
+    transition: transform .08s ease, box-shadow .08s ease;
+  }
+  #keys button:hover { transform: translateY(-1px); }
+  #keys button:active, #keys button.down { transform: translateY(3px); box-shadow: 0 1px 0 #b9b9bf, 0 2px 4px rgba(0, 0, 0, .15); }
+  #keys button.on { color: #fff; background: linear-gradient(180deg, #f39a5e, var(--orange)); box-shadow: 0 4px 0 var(--orange-deep), 0 6px 10px rgba(194, 88, 43, .3); }
+  #keys button.on:active, #keys button.on.down { box-shadow: 0 1px 0 var(--orange-deep), 0 2px 4px rgba(194, 88, 43, .3); }
+  #hint { font: 500 12px -apple-system, sans-serif; color: var(--sub); opacity: .8; }
+  #hint kbd { font: 600 11px var(--mono); padding: 1px 5px; border-radius: 4px; background: rgba(0, 0, 0, .06); border: 1px solid rgba(0, 0, 0, .1); }
+
+  /* ---------- card one · hero ---------- */
+  .hero { flex-direction: column; text-align: center; }
+  .hero > *:not(canvas) { position: relative; z-index: 2; }
+  .calm { display: flex; flex-direction: column; align-items: center; }
+  .calm::before {
+    content: ""; position: absolute; inset: -70px -180px; z-index: -1; pointer-events: none;
+    background: radial-gradient(closest-side, rgba(243, 242, 239, .98), rgba(243, 242, 239, .85) 55%, rgba(243, 242, 239, 0));
+  }
+  .wordmark { width: min(280px, 60vw); margin-bottom: 14px; }
+  .icon { width: min(260px, 50vw, 30vh); aspect-ratio: 1; filter: drop-shadow(18px 28px 34px rgba(0, 0, 0, .22)); animation: float 6s ease-in-out infinite; z-index: 3 !important; }
+  @keyframes float { 50% { transform: translateY(-10px); } }
+  .tagline { margin-top: 28px; font-size: clamp(20px, 2.8vw, 27px); font-weight: 600; letter-spacing: -.4px; }
+  .hero .btn { margin-top: 18px; }
+  .hero .fine { margin-top: 12px; }
+
+  /* ---------- buttons ---------- */
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px; height: 52px; padding: 0 26px; border-radius: 16px;
+    background: #1c1c1e; color: #fff; text-decoration: none; font-size: 18px; font-weight: 500; letter-spacing: -.2px;
+    box-shadow: 0 12px 26px rgba(0, 0, 0, .18), 0 2px 6px rgba(0, 0, 0, .10); transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .btn:hover { transform: translateY(-2px); box-shadow: 0 16px 32px rgba(0, 0, 0, .22), 0 3px 8px rgba(0, 0, 0, .12); }
+  .btn:active { transform: translateY(1px); box-shadow: 0 4px 10px rgba(0, 0, 0, .18); }
+  .btn svg { width: 20px; height: 20px; margin-top: -3px; }
+  .btn.ghost { background: rgba(255, 255, 255, .75); color: var(--ink); border: 1px solid rgba(0, 0, 0, .10); box-shadow: 0 10px 24px rgba(40, 55, 85, .10); }
+  .fine { font-size: 14px; color: var(--sub); font-weight: 500; }
+  .dot { margin: 0 8px; opacity: .5; }
+  .term {
+    display: inline-flex; align-items: center; gap: 12px; max-width: 100%; padding: 13px 16px; border-radius: 14px;
+    background: #1c1c1e; color: #e5e5ea; font: 14px var(--mono); box-shadow: 0 12px 26px rgba(0, 0, 0, .18);
+  }
+  .term .p { color: var(--blue); user-select: none; }
+  .term button { margin-left: 4px; border: 0; background: rgba(255, 255, 255, .1); color: #e5e5ea; font: 600 12px -apple-system, sans-serif; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
+  .term button:hover { background: rgba(255, 255, 255, .18); }
+
+  /* ---------- cards two & three ---------- */
+  .two { color: var(--navy); }
+  .three { color: #3a2830; }
+  .grid { display: grid; grid-template-columns: 1fr 1.15fr; gap: 48px; align-items: center; }
+  .grid > * { min-width: 0; }
+  h2 { font: italic 400 clamp(38px, 4.6vw, 60px)/1.04 "Bodoni 72", Didot, "Playfair Display", "Times New Roman", serif; letter-spacing: -.6px; }
+  h2 em { font-style: italic; color: inherit; }
+  h2 em::after { content: "."; color: var(--orange); }
+  .sub { opacity: .75; }
+  .facts { list-style: none; margin-top: 22px; font-size: 15px; }
+  .facts li { padding: 9px 0; border-top: 1px solid rgba(0, 0, 0, .12); }
+  .facts b { display: none; }
+  .shot { border-radius: 14px; overflow: hidden; background: #fff; box-shadow: 0 34px 70px rgba(29, 46, 79, .28), 0 0 0 1px rgba(0, 0, 0, .06); }
+  .three .shot { box-shadow: 0 34px 70px rgba(120, 40, 60, .22), 0 0 0 1px rgba(0, 0, 0, .05); }
+
+  /* ---------- typeable text ---------- */
+  .type {
+    position: relative; margin-top: 20px; padding: 16px 18px 18px; border-radius: 14px; cursor: text; outline: none;
+    background: rgba(255, 255, 255, .55); border: 1.5px solid rgba(255, 255, 255, .9);
+    font: 500 clamp(16px, 1.45vw, 19px)/1.65 var(--mono); letter-spacing: -.2px; color: inherit;
+    transition: background .2s ease, box-shadow .2s ease;
+  }
+  .type:focus-within { background: rgba(255, 255, 255, .75); box-shadow: 0 12px 30px rgba(0, 0, 0, .08); }
+  .type .t { position: relative; }
+  .type .t span { color: inherit; opacity: .38; transition: opacity .08s ease; }
+  .type .t span.ok { opacity: 1; }
+  .type .t span.bad { opacity: 1; color: #d0342c; text-decoration: underline; text-decoration-thickness: 2px; }
+  .type .caret { position: absolute; width: 2.5px; height: 1.15em; margin-top: .05em; border-radius: 1.5px; background: var(--orange); transition: left .07s ease-out, top .07s ease-out; opacity: 0; }
+  .type:focus-within .caret { opacity: 1; animation: blink 1s steps(1) infinite; }
+  .type.live .caret { animation: none; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .type textarea { position: absolute; opacity: 0; width: 1px; height: 1px; top: 0; left: 0; pointer-events: none; }
+  .type .hud { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 8px; font: italic 400 14px "Bodoni 72", Didot, Georgia, serif; opacity: .6; }
+  .type .hud .wpm { font-size: 13px; letter-spacing: 0; text-transform: none; opacity: 1; }
+  .type .hud .wpm b { font-size: 22px; color: var(--orange); font-weight: 700; margin-right: 3px; }
+  .type .hud .wpm .acc { margin-left: 10px; }
+  .type.done .hud .wpm b { animation: pop .35s ease; }
+  @keyframes pop { 50% { transform: scale(1.18); } }
+  .type .again { display: none; margin-top: 10px; font: 600 12px -apple-system, sans-serif; opacity: .7; }
+  .type.done .again { display: block; }
+
+  /* ---------- download row ---------- */
+  .get { margin-top: 40px; display: grid; grid-template-columns: auto 1fr; gap: 24px; align-items: center; }
+  .get .cap { width: 130px; border-radius: 20px; overflow: hidden; box-shadow: 0 20px 40px rgba(120, 40, 60, .2); }
+  .get .actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .get .fine { margin-top: 10px; }
+  footer { margin-top: 22px; font-size: 13px; opacity: .65; display: flex; flex-wrap: wrap; gap: 6px 0; }
+  footer a { text-decoration-color: rgba(0, 0, 0, .3); }
+
+  @media (max-width: 860px) {
+    .card { padding: 56px 18px 92px; }
+    .grid { grid-template-columns: 1fr; gap: 24px; }
+    .grid .shot { order: 2; max-width: 520px; }
+    .get { grid-template-columns: 1fr; margin-top: 28px; }
+    .get .cap { display: none; }
+    .term { flex-wrap: wrap; white-space: normal; font-size: 13px; }
+    .term code { overflow-wrap: anywhere; }
+    #hint { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .icon { animation: none; }
+    .type .caret { transition: none; }
+    .card.press { transition: none; transform: none; filter: none; }
+  }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="apple" viewBox="0 0 24 24"><path fill="currentColor" d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></symbol>
+  <symbol id="github" viewBox="0 0 24 24"><path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56v-2c-3.2.7-3.87-1.37-3.87-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.69 1.25 3.35.96.1-.74.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.18 1.83 1.18 3.09 0 4.41-2.69 5.39-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"/></symbol>
+</svg>
+
+<main id="deck">
+
+<!-- ================= ONE · hero ================= -->
+<header class="card hero on" id="one" data-color="#f3f2ef">
+  <canvas id="wall" aria-hidden="true"></canvas>
+  <div class="calm"><img class="wordmark" src="assets/wordmark.png" alt="fumble" width="680" height="293"></div>
+  <img class="icon" src="assets/icon.png" alt="The Fumble app icon: a pixel F keycap" width="640" height="640">
+  <div class="calm">
+    <p class="tagline">The typing coach that learns from your mistakes.</p>
+    <a class="btn" href="https://github.com/alexiscodingbits/Fumble/releases/latest/download/Fumble.dmg"><svg><use href="#apple"/></svg>Download for Mac</a>
+    <p class="fine">Free<span class="dot">·</span>Open source<span class="dot">·</span>macOS 14 or later</p>
+  </div>
+</header>
+
+<!-- ================= TWO · the idea ================= -->
+<section class="card two" id="two" data-color="#a8d4ff" data-dither="86,150,214">
+  <canvas class="paint" aria-hidden="true"></canvas>
+  <div class="wrap grid">
+    <div>
+      <h2>It already knows what you're <em>bad at</em></h2>
+      <div class="type" data-typebox tabindex="0" aria-label="Practice text — click and type it">
+        <div class="hud"><span class="label">click and type this</span><span class="wpm"><b>—</b>wpm</span></div>
+        <div class="t">Most typing tutors make you grind drills for hours before they learn a thing about you. Fumble sits in your menu bar and watches how you really type, then drills only the keys that cost you time.</div>
+        <div class="again">Done. Click to go again.</div>
+        <textarea autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" aria-hidden="true" tabindex="-1"></textarea>
+      </div>
+      <ul class="facts sub">
+        <li><b>time</b><span>Weak keys are ranked by seconds lost, not by how slow they are. A key 40ms slow that you hit 2,000 times beats one 220ms slow that you hit 50 times.</span></li>
+        <li><b>you</b><span>Everything is judged against your own baseline. A 40 WPM typist and a 110 WPM typist get different answers.</span></li>
+        <li><b>honest</b><span>Pastes, text expanders, autorepeat and idle time are left out of your WPM, and every exclusion is counted.</span></li>
+      </ul>
+    </div>
+    <div class="shot"><img src="assets/screenshot-trainer.webp" alt="Fumble's trainer: a keyboard coloured by how you actually type, and a drill aimed at your weak letters" width="1696" height="1320"></div>
+  </div>
+</section>
+
+<!-- ================= THREE · privacy + get it ================= -->
+<section class="card three" id="three" data-color="#f8d6dd" data-dither="214,120,145">
+  <canvas class="paint" aria-hidden="true"></canvas>
+  <div class="wrap">
+    <div class="grid">
+      <div>
+        <h2>Which key and when. Never what you <em>wrote</em></h2>
+        <div class="type" data-typebox tabindex="0" aria-label="Practice text — click and type it">
+          <div class="hud"><span class="label">click and type this</span><span class="wpm"><b>—</b>wpm</span></div>
+          <div class="t">Fumble records physical keycodes and timings, never characters. Nothing is saved that could replay your text, nothing is recorded in password fields, and there is no network code at all. Open source, so you can check.</div>
+          <div class="again">Done. Click to go again.</div>
+          <textarea autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" aria-hidden="true" tabindex="-1"></textarea>
+        </div>
+        <p class="sub" style="margin-top:12px;font-size:14px">The full account, including the small residual risk: <a href="https://github.com/alexiscodingbits/Fumble/blob/main/PRIVACY.md">PRIVACY.md</a></p>
+      </div>
+      <div class="shot"><img src="assets/screenshot-stats.webp" alt="Fumble's stats: a speed heatmap of your keyboard from real all-day typing" width="1696" height="1320"></div>
+    </div>
+    <div class="get">
+      <div class="cap"><img src="assets/keycap.webp" alt="The orange F keycap" width="1600" height="889"></div>
+      <div>
+        <div class="actions">
+          <a class="btn" href="https://github.com/alexiscodingbits/Fumble/releases/latest/download/Fumble.dmg"><svg><use href="#apple"/></svg>Download for Mac</a>
+          <a class="btn ghost" href="https://github.com/alexiscodingbits/Fumble"><svg><use href="#github"/></svg>GitHub</a>
+          <div class="term"><span class="p">$</span><code id="brew">brew install --cask alexiscodingbits/fumble/fumble</code><button type="button" id="copy">Copy</button></div>
+        </div>
+        <p class="fine sub">Free<span class="dot">·</span>macOS 14 or later<span class="dot">·</span>Signed &amp; notarized<span class="dot">·</span>Needs Input Monitoring</p>
+        <footer>Made by Alex McConnell.<span class="dot">·</span><a href="https://github.com/alexiscodingbits/Fumble/releases">Releases</a><span class="dot">·</span><a href="https://github.com/alexiscodingbits/Fumble/blob/main/PRIVACY.md">Privacy</a></footer>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FOUR · not on the map. Press 4. ================= -->
+<section class="card four" id="four" data-color="#141416">
+  <div class="wrap term4" aria-live="polite">
+    <pre id="tty"></pre>
+  </div>
+</section>
+
+</main>
+
+<nav id="nav" aria-label="Pages">
+  <div id="keys">
+    <button type="button" data-go="0" class="on" aria-label="Page 1">1</button>
+    <button type="button" data-go="1" aria-label="Page 2">2</button>
+    <button type="button" data-go="2" aria-label="Page 3">3</button>
+    <button type="button" data-go="3" aria-label="Page 4" class="secret" hidden>4</button>
+  </div>
+  <div id="hint">press <kbd>→</kbd> or <kbd>space</kbd></div>
+</nav>
+
+<script>
+const STILL = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const DPR = Math.min(devicePixelRatio || 1, 2);
+function fit(canvas) {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w * DPR; canvas.height = h * DPR;
+  canvas.getContext('2d').setTransform(DPR, 0, 0, DPR, 0, 0);
+  return [w, h];
+}
+function rng(seed) { let s = seed >>> 0; return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296; }
+
+// ---------- ONE · the type wall. Rows of words drift by and get typed orange. The rows are
+// lesson words, with a few lines from a certain novel about being watched mixed in.
+const wall = (() => {
+  const canvas = document.getElementById('wall'), ctx = canvas.getContext('2d');
+  const R = rng(1234);
+  const WORDS = 'late social media local zoom spring any many unique among from watch black location support face ball sequence prize truck shoulder specific has require keyboard fingers speed accuracy rhythm'.split(' ');
+  const LINES = [
+    'it was a bright cold day in april and the clocks were striking thirteen',
+    'who controls the past controls the future',
+    'freedom is the freedom to say that two plus two make four',
+    'nothing was your own except the few cubic centimetres inside your skull',
+    'we shall meet in the place where there is no darkness',
+    'if you want to keep a secret you must also hide it from yourself',
+    'perhaps one did not want to be loved so much as to be understood',
+    'until they become conscious they will never rebel',
+    'sanity is not statistical',
+    'the best books are those that tell you what you know already',
+    'reality exists in the human mind and nowhere else',
+    'big brother is watching you',
+    'war is peace freedom is slavery ignorance is strength',
+    'the object of power is power',
+    'he loved big brother',
+  ];
+  const ROWS = Array.from({ length: 40 }, (_, i) => {
+    let t = '';
+    while (t.length < 200) t += (R() < 0.35 ? LINES[Math.floor(R() * LINES.length)] : Array.from({ length: 4 }, () => WORDS[Math.floor(R() * WORDS.length)]).join(' ')) + ' ';
+    return { t, v: (i % 2 ? 1 : -1) * (40 + R() * 50), off: R() * 800 };
+  });
+  let W, H, fs, gap, cw;
+  function size() {
+    [W, H] = fit(canvas);
+    fs = Math.max(20, Math.min(44, W / 44)); gap = fs * 1.52;
+    ctx.font = `500 ${fs}px Menlo, "SF Mono", monospace`; ctx.textBaseline = 'middle';
+    cw = ctx.measureText('m').width;
+  }
+  function draw(time) {
+    ctx.clearRect(0, 0, W, H);
+    const k = fs / 44, rows = Math.ceil(H / gap) + 1;
+    for (let i = 0; i < rows; i++) {
+      const r = ROWS[i % ROWS.length], n = r.t.length;
+      const y = gap * .9 + i * gap, x0 = ((r.off + r.v * k * time) % (cw * 60)) - cw * 60;
+      const typed = Math.floor((time * 14 + i * 9) % n);
+      for (let c = 0; c < n; c++) {
+        const x = x0 + c * cw; if (x < -cw || x > W) continue;
+        const done = ((c - typed + n) % n) > n - 40;
+        ctx.fillStyle = done ? 'rgba(233,127,60,.5)' : 'rgba(78,121,181,.16)';
+        ctx.fillText(r.t[c], x, y);
+      }
+    }
+  }
+  size(); draw(0);
+  return { size, draw };
+})();
+
+// ---------- TWO & THREE · dithered paper. An ordered (Bayer) dither of a slow field, in a
+// darker shade of the card, so the background looks like a screen-printed halftone. Nothing
+// moves: each pixel only decides, every so often, whether it's on — so the whole sheet
+// ripples in place, the way dither art shimmers when you tilt it.
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+const dithers = [...document.querySelectorAll('.card[data-dither]')].map(el => {
+  const canvas = el.querySelector('canvas.paint'), ctx = canvas.getContext('2d');
+  const [dr, dg, db] = el.dataset.dither.split(',').map(Number);
+  const bg = el.dataset.color, R = rng(el.id.length * 7919);
+  const off = document.createElement('canvas'), octx = off.getContext('2d');
+  let W, H, cols, rows, img, words = [], phase = R() * 100;
+  const CELL = 3;   // css px per dither dot
+  function size() {
+    [W, H] = fit(canvas);
+    cols = Math.ceil(W / CELL); rows = Math.ceil(H / CELL);
+    off.width = cols; off.height = rows; img = octx.createImageData(cols, rows);
+    // the word grid used by the typed-in transition
+    const ch = Math.max(14, Math.min(26, W / 56)), lh = ch * 1.45, cw = ch * .62;
+    words = [];
+    for (let y = -lh; y < H + lh; y += lh) {
+      let x = -cw * (2 + R() * 6);
+      while (x < W) { const w = cw * (2 + Math.floor(R() * 7)); words.push({ x, y, w, h: ch }); x += w + cw; }
+    }
+  }
+  function field(t) {
+    const d = img.data; let i = 0;
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++, i += 4) {
+      // a soft, slow field: broad bands plus a couple of ripples, drifting in phase only
+      const v = .5 + .22 * Math.sin(x * .035 + t * .35 + phase) + .18 * Math.cos(y * .05 - t * .27) + .12 * Math.sin((x + y) * .02 + t * .5) + .08 * Math.sin(Math.hypot(x - cols * .6, y - rows * .4) * .09 - t * .8);
+      const on = v * 16 > BAYER[(y & 3) * 4 + (x & 3)] + .5;
+      d[i] = dr; d[i + 1] = dg; d[i + 2] = db; d[i + 3] = on ? 46 : 0;
+    }
+    octx.putImageData(img, 0, 0);
+  }
+  function paint(t, progress = 1, prev = null) {
+    field(t);
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+    ctx.drawImage(off, 0, 0, cols, rows, 0, 0, cols * CELL, rows * CELL);
+    if (progress >= 1 || !prev) return;
+    // typed-in reveal: keep only the words already "typed", show the previous card elsewhere.
+    // One path, one fill — destination-in keeps only what the *latest* fill covers.
+    ctx.globalCompositeOperation = 'destination-in';
+    const n = Math.floor(words.length * progress);
+    ctx.beginPath();
+    let i = 0;
+    while (i < n) {
+      const row = words[i].y; let j = i; while (j < n && words[j].y === row) j++;
+      if (j < words.length && words[j].y === row) for (let k = i; k < j; k++) ctx.roundRect(words[k].x, words[k].y, words[k].w, words[k].h, 3);
+      else ctx.rect(0, row - 1, W, words[i].h * 1.45 + 2);
+      i = j;
+    }
+    ctx.fill();
+    ctx.globalCompositeOperation = 'destination-over';
+    ctx.fillStyle = prev; ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = 'source-over';
+    if (n < words.length) { const w = words[n]; ctx.fillStyle = '#e97f3c'; ctx.fillRect(w.x - 1, w.y - 2, 3, w.h + 4); }
+  }
+  size();
+  return { el, size, paint };
+});
+
+// ---------- The deck. One card at a time. Leaving a card presses it like a keycap; the next
+// card is typed in over it, word by word, then its content rises into place.
+const cards = [...document.querySelectorAll('.card')], keys = [...document.querySelectorAll('#keys button')];
+let current = Math.max(0, cards.findIndex(c => '#' + c.id === location.hash)), busy = false, transition = null;
+cards.forEach((c, i) => c.classList.toggle('on', i === current));
+keys.forEach((k, i) => k.classList.toggle('on', i === current));
+function go(i, explicit) {
+  if (i === 3 && !explicit) return;              // only the 4 key (or its keycap) gets you there
+  if (i < 0) i = 2; else if (i > 2 && !explicit) i = 0;
+  if (busy || i === current) return;
+  busy = true;
+  const from = cards[current], to = cards[i];
+  keys[current].classList.remove('on'); keys[i].classList.add('on', 'down'); setTimeout(() => keys[i].classList.remove('down'), 160);
+  if (i === 3) runTTY();
+  // (no keycap press on the outgoing card — it stays perfectly still under the curtain)
+  to.classList.add('on', 'enter'); to.style.zIndex = 2; from.style.zIndex = 1;
+  to.style.clipPath = 'polygon(0 0, 0 0, 0 0)';
+  history.replaceState(null, '', '#' + to.id);
+  const start = performance.now(), dur = STILL ? 0 : 820;
+  transition = { to, start, dur };
+  setTimeout(() => {
+    from.classList.remove('on', 'press'); to.classList.remove('enter'); from.style.zIndex = ''; to.style.zIndex = ''; to.style.clipPath = '';
+    transition = null; current = i; busy = false;
+    if (i === 0) { wall.size(); }
+  }, dur + 60);
+}
+keys.forEach(k => k.addEventListener('click', () => go(+k.dataset.go, true)));
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'TEXTAREA' && !['PageDown', 'PageUp'].includes(e.key)) return;   // typing in a drill
+  if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(e.key)) { e.preventDefault(); go(current + 1); }
+  else if (['ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); go(current - 1); }
+  else if (e.key >= '1' && e.key <= '4') go(+e.key - 1, true);
+});
+let wheelAt = 0;
+addEventListener('wheel', e => {
+  const wrap = e.target.closest('.wrap');
+  if (wrap && wrap.scrollHeight > wrap.clientHeight + 2) return;   // a tall card is scrolling its own content
+  const now = performance.now(); if (now - wheelAt < 900 || Math.abs(e.deltaY) < 24) return;
+  wheelAt = now; go(current + (e.deltaY > 0 ? 1 : -1));
+}, { passive: true });
+let touchY = null;
+addEventListener('touchstart', e => { touchY = e.touches[0].clientY; }, { passive: true });
+addEventListener('touchend', e => {
+  if (touchY === null) return; const dy = e.changedTouches[0].clientY - touchY; touchY = null;
+  if (Math.abs(dy) > 60) go(current + (dy < 0 ? 1 : -1));
+});
+
+// ---------- The curtain. The incoming card is clipped to a typed-in shape that grows from the
+// top: whole lines first, then a jagged frontier a few lines deep whose edge advances in
+// character-sized steps. Everything on the card — colour, dither, text — arrives together, and
+// the card underneath is simply covered, like a page being typed over it.
+function curtain(el, p) {
+  const W = innerWidth, H = innerHeight, lh = Math.max(22, Math.min(40, W / 40)), ch = lh * .62;
+  const rows = Math.ceil(H / lh), depth = 4;                     // lines in flight at once
+  const fill = p * (rows + depth);
+  const pts = ['0px 0px', W + 'px 0px'];
+  let r = 0, first = true;
+  for (; r < rows; r++) {
+    const f = Math.max(0, Math.min(1, (fill - r) / depth));
+    if (f >= 1) continue;                                          // full line: right edge continues
+    const x = Math.round(f * W / ch) * ch;                         // snap to character cells
+    if (f <= 0) break;
+    if (first) { pts.push(`${W}px ${r * lh}px`); first = false; } // leave the right edge once
+    pts.push(`${x}px ${r * lh}px`, `${x}px ${(r + 1) * lh}px`);
+  }
+  if (r >= rows) pts.push(`${W}px ${H}px`, `0px ${H}px`); else pts.push(`0px ${r * lh}px`);
+  el.style.clipPath = `polygon(${pts.join(',')})`;
+}
+
+// ---------- one animation loop for everything visible
+const t0 = performance.now();
+let lastDither = 0;
+function frame(now) {
+  const t = (now - t0) / 1000;
+  if (cards[0].classList.contains('on') && !STILL) wall.draw(t);
+  for (const d of dithers) {
+    if (!d.el.classList.contains('on')) continue;
+    if (now - lastDither > 90 && !STILL) d.paint(t);   // the ripple only needs ~11 fps
+  }
+  if (now - lastDither > 90) lastDither = now;
+  if (transition) {
+    const p = Math.min(1, (now - transition.start) / transition.dur);
+    curtain(transition.to, p * p * (3 - 2 * p));           // smoothstep: the typist speeds up then settles
+  }
+  requestAnimationFrame(frame);
+}
+dithers.forEach(d => d.paint(0));
+if (STILL) { wall.draw(0); }
+requestAnimationFrame(frame);
+addEventListener('resize', () => { wall.size(); wall.draw(0); dithers.forEach(d => { d.size(); d.paint(0); }); });
+
+// ---------- Typeable text. Click any box and type it: the orange bar caret moves ahead of
+// you, typed letters darken, mistakes go red, and you get a WPM for the passage. Same rules
+// as the app: WPM is over active typing time, so pausing to read doesn't count against you.
+document.querySelectorAll('[data-typebox]').forEach(box => {
+  const t = box.querySelector('.t'), ta = box.querySelector('textarea'), hud = box.querySelector('.wpm'), label = box.querySelector('.label');
+  const text = t.textContent.replace(/\s+/g, ' ').trim();
+  t.innerHTML = [...text].map(ch => `<span>${ch}</span>`).join('') + '<i class="caret"></i>';
+  const spans = [...t.querySelectorAll('span')], caret = t.querySelector('.caret');
+  let i = 0, errors = 0, typed = 0, active = 0, last = null, done = false;
+  function place() {
+    const ref = spans[Math.min(i, spans.length - 1)], r = ref.getBoundingClientRect(), tr = t.getBoundingClientRect();
+    caret.style.left = (i >= spans.length ? r.right : r.left) - tr.left - 1 + 'px';
+    caret.style.top = r.top - tr.top + 'px';
+  }
+  function wpm() { return active > 0.5 ? Math.round((i / 5) / (active / 60)) : null; }
+  function hudUpdate() {
+    const w = wpm(), acc = typed ? Math.round(100 * (typed - errors) / typed) : null;
+    hud.innerHTML = `<b>${w ?? '—'}</b>wpm${acc !== null ? `<span class="acc">${acc}%</span>` : ''}`;
+  }
+  function reset() { i = errors = typed = active = 0; last = null; done = false; spans.forEach(s => s.className = ''); box.classList.remove('done', 'live'); label.textContent = 'type this'; hudUpdate(); place(); }
+  function key(ch, back) {
+    if (done) return;
+    const now = performance.now();
+    if (last !== null && now - last < 5000) active += (now - last) / 1000;
+    last = now;
+    if (back) { if (i > 0) { i--; spans[i].className = ''; } place(); return; }
+    if (ch.length !== 1) return;
+    box.classList.add('live'); typed++;
+    if (ch === text[i]) spans[i].className = 'ok'; else { spans[i].className = 'bad'; errors++; }
+    i++; place(); hudUpdate();
+    if (i >= spans.length) { done = true; box.classList.add('done'); label.textContent = 'your speed on this passage'; }
+  }
+  ta.addEventListener('beforeinput', e => {
+    e.preventDefault();
+    if (e.inputType === 'deleteContentBackward') key('', true);
+    else if (e.inputType === 'insertText' || e.inputType === 'insertCompositionText') for (const ch of (e.data || '')) key(ch);
+  });
+  ta.addEventListener('keydown', e => { if (e.key === 'Escape') { reset(); ta.blur(); } });
+  box.addEventListener('focus', () => ta.focus({ preventScroll: true }));
+  box.addEventListener('mousedown', e => { e.preventDefault(); if (done) reset(); ta.focus({ preventScroll: true }); });
+  box.addEventListener('focusin', () => { label.textContent = done ? 'your speed on this passage' : 'type this'; });
+  box.addEventListener('focusout', () => { if (!typed) label.textContent = 'click and type this'; });
+  addEventListener('resize', place);
+  hudUpdate(); place();
+});
+
+// ---------- FOUR · the terminal. Typed out live, once, the first time you land on it.
+const tty = document.getElementById('tty');
+const TRANSCRIPT = [
+  ['p', '$ '], ['', 'fumble --secrets\n\n'],
+  ['g', '  oh, you found one easter egg.\n'],
+  ['', '  find the second and i\'ll send you my dog-eared copy.\n'],
+  ['o', '  @ahhlexmc'], ['', ' on x.\n\n'],
+  ['p', '$ '],
+];
+let ttyDone = false;
+function runTTY() {
+  if (ttyDone) return; ttyDone = true;
+  document.querySelector('#keys .secret').hidden = false;
+  tty.innerHTML = '<i class="cur"></i>';
+  const cur = tty.querySelector('.cur');
+  let seg = 0, ch = 0, span = null;
+  (function tick() {
+    if (seg >= TRANSCRIPT.length) return;
+    const [cls, text] = TRANSCRIPT[seg];
+    if (!span) { span = document.createElement('span'); if (cls) span.className = cls; tty.insertBefore(span, cur); }
+    span.textContent += text[ch++];
+    if (ch >= text.length) { seg++; ch = 0; span = null; }
+    const c = text[ch - 1];
+    setTimeout(tick, STILL ? 0 : c === '\n' ? 160 : cls === 'dim' ? 14 : 26);
+  })();
+}
+if (current === 3) runTTY();
+
+// ---------- Copy the brew command (only on click)
+document.getElementById('copy').addEventListener('click', async e => {
+  try { await navigator.clipboard.writeText(document.getElementById('brew').textContent); e.target.textContent = 'Copied'; }
+  catch { e.target.textContent = 'Select & copy'; }
+  setTimeout(() => { e.target.textContent = 'Copy'; }, 1600);
+});
+</script>
+</body>
+</html>

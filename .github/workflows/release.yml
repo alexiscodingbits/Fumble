@@ -85,6 +85,8 @@ jobs:
           xcrun notarytool submit "$DMG" \
             --key /tmp/ac_key.p8 --key-id "$AC_API_KEY_ID" --issuer "$AC_API_ISSUER_ID" --wait
           xcrun stapler staple "$DMG"
+          # Version-free copy so the site's download link never goes stale between releases.
+          cp "$DMG" dist/Fumble.dmg
           rm -f /tmp/ac_key.p8
 
       - name: Build DMG (unnotarized fallback)
@@ -96,10 +98,12 @@ jobs:
       - name: Publish release
         # Only tags publish; a workflow_dispatch run is a pipeline test and has no tag to
         # attach a release to (the old unconditional publish step made dispatch runs fail).
-        if: startsWith(github.ref, 'refs/tags/v')
+        # Never publish an unnotarized DMG: without the APPLE_* secrets the release is cut
+        # locally and this job must not overwrite its notarized assets.
+        if: startsWith(github.ref, 'refs/tags/v') && env.HAS_NOTARY == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/Fumble-*.dmg
+          files: dist/Fumble*.dmg
           generate_release_notes: true
 
       - name: Upload DMG artifact (dispatch runs)
