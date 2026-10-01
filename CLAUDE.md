@@ -75,6 +75,16 @@ cd FumbleCore && swift run fumble-cli          # inspect today
 
 ## ⚠️ Critical gotchas
 
+- **Releases are cut locally, not by CI.** The repo has no APPLE_* secrets, so release.yml
+  fails on every tag and its publish step is gated off (it must never overwrite notarized
+  assets with an unsigned DMG). Process: bump `VERSION` → `bash scripts/bundle-app.sh` →
+  zip + `xcrun notarytool submit … --keychain-profile claudometer --wait` → staple the app →
+  `SKIP_BUNDLE=1 bash scripts/make-dmg.sh` → notarize + staple the DMG → `cp` it to
+  `dist/Fumble.dmg` → `gh release create vX.Y.Z dist/Fumble-X.Y.Z.dmg dist/Fumble.dmg` →
+  bump version + sha256 in `alexiscodingbits/homebrew-fumble`. The site links
+  `releases/latest/download/Fumble.dmg`, so **every release must attach `Fumble.dmg`** or the
+  download button 404s.
+
 - **Signing identity: a local self-signed "Fumble Local" cert keeps Input Monitoring across
   rebuilds.** macOS ties TCC permission to the signature; ad-hoc gets a new cdhash every build
   and wipes the grant. `bundle-app.sh` auto-uses the "Fumble Local" code-signing cert if present
